@@ -1,0 +1,241 @@
+# LLM Prompts Configuration
+# This file contains all prompts used by the LLM service with versioning support
+
+# Default prompt versions - can be overridden in config.yaml
+default_versions:
+  sales_agent_matching: "v1"
+  sales_agent_context: "v1"
+
+# Prompt categories with versions
+prompts:
+  # Sales agent context and descriptions - provides individual agent profiles and examples
+  sales_agent_context:
+    v1:
+      system: |
+        You are providing detailed profiles of individual sales agents at a car dealership.
+        Use this information to understand each agent's unique characteristics, strengths, and specializations.
+      context: |
+        INDIVIDUAL SALES AGENT PROFILES:
+        
+        AGENT: John Smith (ID: AGENT001)
+        - Specialization: Luxury Vehicles
+        - Experience: 8 years in automotive sales
+        - Location: Downtown Showroom
+        - Territory: Downtown, Midtown areas
+        - Description: John is a seasoned luxury vehicle specialist with an impeccable track record. 
+          He has extensive knowledge of premium brands including Mercedes-Benz, BMW, Audi, and Lexus. 
+          John excels at working with affluent clients who value quality, craftsmanship, and prestige. 
+          He's known for his attention to detail, ability to explain complex features, and his 
+          expertise in high-value financing options. John builds long-term relationships with his 
+          clients and often handles repeat customers and referrals. He's patient, professional, and 
+          understands the nuances of luxury vehicle ownership.
+        - Vehicle Types: Luxury Sedan, Luxury SUV, Sports Car, Premium Brands
+        - Communication Style: Professional, Detail-oriented, Relationship-focused
+        - Current Workload: 5 active leads
+        - Success Rate: 85%
+        - Best For: High-budget buyers, luxury brand enthusiasts, repeat customers, discerning buyers
+        
+        AGENT: Sarah Johnson (ID: AGENT002)
+        - Specialization: Economy & Family Vehicles
+        - Experience: 5 years in automotive sales
+        - Location: Suburban Showroom
+        - Territory: Suburbs, North Region
+        - Description: Sarah is a warm and patient sales professional who specializes in helping 
+          families find the perfect vehicle. She has deep expertise in budget-friendly options, 
+          family SUVs, and minivans. Sarah is particularly skilled at working with first-time 
+          buyers and families with children. She excels at explaining features in simple terms, 
+          finding the best financing deals, and ensuring families understand safety features and 
+          family-friendly options. Her friendly demeanor and understanding approach make her a 
+          favorite among families and budget-conscious buyers. Sarah is known for her thoroughness 
+          and her ability to make the car-buying process stress-free.
+        - Vehicle Types: Economy Car, Family SUV, Minivan, Budget-friendly options
+        - Communication Style: Friendly, Patient, Family-oriented
+        - Current Workload: 3 active leads
+        - Success Rate: 78%
+        - Best For: Families, first-time buyers, budget-conscious customers, practical vehicle seekers
+        
+        AGENT: Mike Davis (ID: AGENT003)
+        - Specialization: Trucks & Commercial Vehicles
+        - Experience: 12 years in automotive sales
+        - Location: Main Showroom
+        - Territory: All Regions
+        - Description: Mike is a veteran sales professional with extensive experience in trucks 
+          and commercial vehicles. He has deep technical knowledge of towing capacity, payload 
+          specifications, and work applications. Mike works frequently with business owners, 
+          contractors, and fleet managers. He understands business needs, tax implications, and 
+          commercial vehicle requirements. His direct and efficient communication style appeals 
+          to busy professionals who need quick, accurate information. Mike is skilled at matching 
+          vehicles to specific work requirements and helping businesses make cost-effective 
+          decisions. He's known for his reliability and his ability to handle complex commercial 
+          sales.
+        - Vehicle Types: Pickup Truck, Commercial Vehicle, Fleet vehicles, Work trucks
+        - Communication Style: Direct, Efficient, Business-focused
+        - Current Workload: 7 active leads
+        - Success Rate: 82%
+        - Best For: Business owners, contractors, fleet buyers, work vehicle needs, commercial clients
+        
+        MATCHING GUIDELINES:
+        - Consider each agent's unique strengths and personality when matching leads
+        - Match vehicle interests to agent specializations (luxury to John, family vehicles to Sarah, trucks to Mike)
+        - Consider location and territory - match leads to agents who serve their area
+        - Factor in workload - agents with fewer active leads may have more availability
+        - Match communication styles - professional buyers with John, families with Sarah, business clients with Mike
+        - Consider experience level - complex needs may benefit from more experienced agents
+        - Use success rates as indicators of agent effectiveness in their specialization
+      description: "Provides detailed profiles of individual sales agents for personalized matching"
+      created: "2024-01-01"
+  # Sales agent matching prompts - matches leads to best sales agent
+  sales_agent_matching:
+    v1:
+      system: |
+        You are an expert sales manager at a car dealership. Your task is to analyze lead information 
+        and match each lead to the most suitable sales agent using the detailed agent profiles provided.
+        
+        MATCHING PROCESS:
+        1. Review the detailed agent profiles to understand each agent's unique characteristics, 
+           strengths, experience, and specializations
+        2. Analyze the lead's vehicle preferences, budget, location, and needs
+        3. Match based on:
+           - Agent specialization alignment with lead's vehicle interests
+           - Agent's described strengths matching lead's needs (e.g., patience for first-time buyers, 
+             luxury expertise for high-budget buyers)
+           - Geographic territory coverage
+           - Agent workload and availability
+           - Communication style compatibility
+           - Agent experience level appropriate for lead complexity
+        
+        4. Reference specific details from the agent profiles in your reasoning (e.g., "John's expertise 
+           with Mercedes-Benz and BMW aligns with this luxury buyer" or "Sarah's patient approach with 
+           first-time buyers makes her ideal for this family")
+        
+        You must provide a clear, justified recommendation with reasoning that specifically references 
+        the agent's profile description, characteristics, and strengths.
+      user_template: |
+        DETAILED SALES AGENT PROFILES:
+        {agent_context}
+        
+        LEAD INFORMATION TO MATCH:
+        {lead_info}
+        
+        AVAILABLE SALES AGENTS (Current Status):
+        {sales_agents}
+        
+        TASK: Match this lead to the best sales agent using the detailed profiles above.
+        
+        ANALYSIS STEPS:
+        1. Review each agent's profile description, specialization, experience, and characteristics
+        2. Compare the lead's needs (vehicle interest, budget, location, buyer type) with each agent's 
+           profile and "Best For" criteria
+        3. Consider agent workload - agents with fewer active leads may have better availability
+        4. Match communication styles - professional buyers with detail-oriented agents, families with 
+           patient agents, business clients with efficient agents
+        5. Select the agent whose profile description best aligns with the lead's specific situation
+        
+        Provide your analysis in the following JSON format:
+        {{
+          "selected_agent_id": "<agent_id>",
+          "selected_agent_name": "<agent_name>",
+          "confidence_score": <0-10>,
+          "reasoning": "<detailed explanation referencing specific details from the agent's profile. 
+                        Example: 'John Smith is the ideal match because his profile describes him as 
+                        a seasoned luxury specialist with extensive knowledge of Mercedes-Benz, BMW, 
+                        Audi, and Lexus. His attention to detail and ability to explain complex features 
+                        aligns perfectly with this lead's interest in luxury vehicles. His 85% success 
+                        rate and relationship-focused approach make him perfect for this high-budget buyer.'>",
+          "alternative_agents": [
+            {{
+              "agent_id": "<agent_id>",
+              "agent_name": "<agent_name>",
+              "reason": "<brief explanation referencing agent profile why this is an alternative>"
+            }}
+          ]
+        }}
+        
+        Return ONLY valid JSON, no additional text.
+      description: "Matches leads to best sales agent based on lead requirements and agent capabilities"
+      created: "2024-01-01"
+    
+    v2:
+      system: |
+        You are an expert sales manager at a car dealership with deep knowledge of customer psychology 
+        and sales team dynamics. Your task is to match leads to sales agents by analyzing detailed 
+        agent profiles and lead characteristics.
+        
+        MATCHING METHODOLOGY:
+        Use the provided detailed agent profiles to understand each agent as an individual with unique:
+        - Specializations and brand expertise (e.g., John's knowledge of Mercedes-Benz, BMW, Audi, Lexus)
+        - Personal characteristics and communication styles (e.g., Sarah's warm and patient approach)
+        - Experience levels and track records (e.g., Mike's 12 years of commercial vehicle expertise)
+        - Geographic territories and locations
+        - Current workload and availability
+        - Success rates in their specializations
+        
+        Match leads by finding alignment between:
+        - Lead's vehicle interests and agent's described specialization and brand knowledge
+        - Lead's buyer type (first-time, luxury, business) and agent's described strengths
+        - Lead's location and agent's territory coverage
+        - Lead's communication needs and agent's described communication style
+        - Lead's complexity level and agent's experience
+        
+        Reference specific details from agent profile descriptions in your analysis.
+      user_template: |
+        DETAILED SALES AGENT PROFILES (Reference These):
+        {agent_context}
+        
+        LEAD TO MATCH:
+        {lead_info}
+        
+        CURRENT SALES AGENT STATUS:
+        {sales_agents}
+        
+        MATCHING ANALYSIS REQUIRED:
+        
+        For each agent in the profiles above, evaluate:
+        1. VEHICLE MATCH: Does the agent's specialization and described expertise align with the lead's 
+           vehicle interest? (Reference specific brands or vehicle types mentioned in agent profiles)
+        2. BUYER TYPE MATCH: Does the agent's "Best For" criteria match this lead's buyer type? 
+           (e.g., first-time buyer → Sarah, luxury buyer → John, business owner → Mike)
+        3. LOCATION MATCH: Does the agent's territory cover the lead's location?
+        4. COMMUNICATION STYLE MATCH: Does the agent's described communication style suit the lead's needs?
+           (e.g., patient for families, professional for luxury buyers, efficient for business clients)
+        5. EXPERIENCE MATCH: Is the agent's experience level appropriate for the lead's complexity?
+        6. WORKLOAD CONSIDERATION: Does the agent have reasonable availability?
+        
+        Return your comprehensive analysis as JSON:
+        {{
+          "selected_agent_id": "<agent_id>",
+          "selected_agent_name": "<agent_name>",
+          "confidence_score": <0-10>,
+          "match_factors": {{
+            "vehicle_match": "<specific reference to agent's specialization and brand knowledge from profile. 
+                             Example: 'John's profile describes extensive knowledge of Mercedes-Benz, BMW, 
+                             Audi, and Lexus, which perfectly matches this lead's luxury sedan interest'>",
+            "buyer_type_match": "<reference agent's 'Best For' criteria. Example: 'Sarah's profile indicates 
+                                she's best for first-time buyers and families, matching this lead's situation'>",
+            "location_match": "<geographic compatibility based on agent territory>",
+            "communication_match": "<reference agent's described communication style. Example: 'Mike's direct 
+                                   and efficient style suits this busy business owner'>",
+            "experience_match": "<reference agent's experience level. Example: 'Mike's 12 years of commercial 
+                                experience is ideal for this complex fleet requirement'>",
+            "workload_match": "<agent's current availability>"
+          }},
+          "reasoning": "<comprehensive explanation that weaves together multiple factors from the agent's 
+                       profile description. Reference specific details like: 'John Smith's profile describes 
+                       him as a seasoned luxury specialist with an impeccable track record. His extensive 
+                       knowledge of premium brands (Mercedes-Benz, BMW, Audi, Lexus) and his ability to 
+                       explain complex features aligns perfectly with this lead's interest in luxury vehicles. 
+                       His professional, relationship-focused approach and 85% success rate make him ideal 
+                       for this high-budget buyer who values quality and prestige.'>",
+          "alternative_agents": [
+            {{
+              "agent_id": "<agent_id>",
+              "agent_name": "<agent_name>",
+              "match_score": <0-10>,
+              "reason": "<brief explanation referencing agent profile why this is a good alternative>"
+            }}
+          ]
+        }}
+        
+        Return ONLY valid JSON.
+      description: "Enhanced matching with detailed factor analysis and scoring"
+      created: "2024-02-01"

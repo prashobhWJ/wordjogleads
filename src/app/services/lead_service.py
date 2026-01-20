@@ -1,13 +1,15 @@
 """
 Lead service for managing leads and syncing to CRM
 """
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from app.database.models.database import Lead
 from app.external.crm.client import CRMClient
 from app.external.crm.twenty_crm import lead_to_twenty_crm
+from app.services.llm_service import LLMService
+from app.core.config import settings
 from app.utils.logging import get_logger, app_logger
 
 logger = get_logger(__name__)
@@ -19,6 +21,7 @@ class LeadService:
     def __init__(self, db: Session):
         self.db = db
         self.crm_client = CRMClient()
+        self.llm_service = LLMService()
     
     def get_all_leads(
         self,
@@ -53,17 +56,122 @@ class LeadService:
         """Get a lead by lead_id (external ID)"""
         return self.db.query(Lead).filter(Lead.lead_id == lead_id).first()
     
-    async def sync_lead_to_crm(self, lead: Lead) -> dict:
+    def get_sales_agents(self) -> List[Dict[str, Any]]:
         """
-        Sync a single lead to Twenty CRM.
-        Creates a person (or uses existing if duplicate) and then creates a task for that person.
+        Get list of available sales agents from configuration.
+        
+        Returns:
+            List of sales agent dictionaries
+        """
+        agents = []
+        for agent in settings.sales_agents:
+            agent_dict = {
+                "id": agent.id,
+                "agent_id": agent.id,  # Alias for compatibility
+                "name": agent.name,
+                "agent_name": agent.name,  # Alias for compatibility
+            }
+            if agent.specialization:
+                agent_dict["specialization"] = agent.specialization
+            if agent.expertise:
+                agent_dict["expertise"] = agent.expertise
+            if agent.experience_years is not None:
+                agent_dict["experience_years"] = agent.experience_years
+            if agent.location:
+                agent_dict["location"] = agent.location
+            if agent.territory:
+                agent_dict["territory"] = agent.territory
+            if agent.current_workload is not None:
+                agent_dict["current_workload"] = agent.current_workload
+            if agent.success_rate is not None:
+                agent_dict["success_rate"] = agent.success_rate
+            if agent.vehicle_types:
+                agent_dict["vehicle_types"] = agent.vehicle_types
+            if agent.communication_style:
+                agent_dict["communication_style"] = agent.communication_style
+            
+            agents.append(agent_dict)
+        
+        return agents
+    
+    async def match_lead_to_sales_agent(
+        self,
+        lead: Lead,
+        version: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Match a lead to the best sales agent using LLM.
         
         Args:
             lead: Lead model instance
+            version: Prompt version to use (defaults to configured version)
         
         Returns:
-            Dictionary with person and task creation responses
+            Dictionary containing selected agent and analysis
         """
+        sales_agents = self.get_sales_agents()
+        
+        if not sales_agents:
+            logger.warning("[yellow]⚠️  No sales agents configured. Cannot match lead.[/yellow]")
+            return {
+                "selected_agent_id": None,
+                "selected_agent_name": None,
+                "error": "No sales agents configured"
+            }
+        
+        logger.info(
+            f"[cyan]Matching lead {lead.lead_id} to sales agent...[/cyan] "
+            f"[dim]Evaluating {len(sales_agents)} agents[/dim]"
+        )
+        
+        try:
+            result = await self.llm_service.match_lead_to_sales_agent(
+                lead_data=lead,
+                sales_agents=sales_agents,
+                version=version
+            )
+            
+            logger.info(
+                f"[green]✅ Lead {lead.lead_id} matched to agent:[/green] "
+                f"[bold cyan]{result.get('selected_agent_name', 'N/A')}[/bold cyan]"
+            )
+            
+            return result
+        except Exception as e:
+            logger.error(
+                f"[red]❌ Failed to match lead {lead.lead_id} to sales agent:[/red] {e}"
+            )
+            raise
+    
+    async def sync_lead_to_crm(self, lead: Lead, match_sales_agent: bool = True) -> dict:
+        """
+        Sync a single lead to Twenty CRM.
+        Creates a person (or uses existing if duplicate) and then creates a task for that person.
+        Optionally matches the lead to a sales agent before syncing.
+        
+        Args:
+            lead: Lead model instance
+            match_sales_agent: Whether to match lead to sales agent before syncing (default: True)
+        
+        Returns:
+            Dictionary with person and task creation responses, and optionally sales agent match
+        """
+        sales_agent_match = None
+        
+        # Match lead to sales agent if requested
+        if match_sales_agent:
+            try:
+                sales_agent_match = await self.match_lead_to_sales_agent(lead)
+                logger.info(
+                    f"[cyan]Sales agent matched for lead {lead.lead_id}:[/cyan] "
+                    f"{sales_agent_match.get('selected_agent_name', 'N/A')}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[yellow]⚠️  Sales agent matching failed for lead {lead.lead_id}:[/yellow] {e}. "
+                    f"Continuing with CRM sync..."
+                )
+                # Don't fail the sync if matching fails
         from app.external.crm.twenty_crm import lead_to_twenty_crm, lead_to_task_data
         import httpx
         
@@ -181,7 +289,8 @@ class LeadService:
                     "person": person_response,
                     "person_created": person_created,
                     "task": task_response,
-                    "person_id": person_id
+                    "person_id": person_id,
+                    "sales_agent_match": sales_agent_match
                 }
                 
             except Exception as task_error:
@@ -196,7 +305,8 @@ class LeadService:
                     "person_created": person_created,
                     "task": None,
                     "task_error": str(task_error),
-                    "person_id": person_id
+                    "person_id": person_id,
+                    "sales_agent_match": sales_agent_match
                 }
             
         except Exception as e:

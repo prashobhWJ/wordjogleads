@@ -46,7 +46,8 @@ src/
 │   │
 │   ├── services/               # Business logic layer
 │   │   ├── __init__.py
-│   │   └── lead_service.py    # Lead service with CRM sync logic
+│   │   ├── lead_service.py    # Lead service with CRM sync logic
+│   │   └── llm_service.py     # LLM service for OpenAI-compatible APIs
 │   │
 │   ├── external/               # External API clients
 │   │   └── crm/
@@ -98,7 +99,7 @@ Request → API Endpoint → Service → Database (SQLAlchemy queries)
 
 2. **Configure application settings:**
    - Copy `config.yaml.example` to `config.yaml`
-   - Update with your database and CRM API credentials
+   - Update with your database, CRM API, and LLM API credentials
 
 3. **Run the application:**
    ```bash
@@ -119,7 +120,7 @@ Request → API Endpoint → Service → Database (SQLAlchemy queries)
 
 2. **Configure application settings:**
    - Copy `config.yaml.example` to `config.yaml`
-   - Update with your database and CRM API credentials
+   - Update with your database, CRM API, and LLM API credentials
 
 3. **Run the application:**
    ```bash
@@ -188,12 +189,83 @@ async def get_leads(
     }
 ```
 
+### Using the LLM Service
+
+```python
+# app/services/llm_service.py usage examples
+from app.services.llm_service import LLMService
+
+# Initialize the LLM service
+llm_service = LLMService()
+
+# Example 1: Simple prompt (easiest way)
+response = await llm_service.simple_prompt(
+    prompt="What is the capital of France?",
+    system_prompt="You are a helpful assistant."
+)
+print(response)  # "The capital of France is Paris."
+
+# Example 2: Advanced chat completion with custom parameters
+messages = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Explain quantum computing in simple terms."}
+]
+response = await llm_service.chat_completion(
+    messages=messages,
+    model="gemma3:12b",  # Override default model
+    temperature=0.8,     # More creative responses
+    max_tokens=500       # Limit response length
+)
+print(response["choices"][0]["message"]["content"])
+
+# Example 3: Streaming responses
+async for chunk in llm_service.chat_completion_stream(
+    messages=[
+        {"role": "user", "content": "Write a short story about a robot."}
+    ],
+    model="gemma3:12b"
+):
+    # Process streaming chunks
+    print(chunk, end="", flush=True)
+
+# Example 4: Using in a service class
+class ContentService:
+    def __init__(self):
+        self.llm_service = LLMService()
+    
+    async def generate_summary(self, text: str) -> str:
+        prompt = f"Summarize the following text in 2-3 sentences:\n\n{text}"
+        return await self.llm_service.simple_prompt(
+            prompt=prompt,
+            system_prompt="You are a text summarization expert."
+        )
+```
+
+**LLM Configuration** (`config.yaml`):
+```yaml
+llm:
+  base_url: "https://192.168.1.22:11434/v1"  # Your OpenAI-compatible API URL
+  api_key: null  # API key if required (set to null if not needed)
+  model: "gemma3:12b"  # Default model to use
+  timeout: 60  # Request timeout in seconds
+  max_tokens: 1000  # Maximum tokens in response
+  temperature: 0.7  # Temperature (0.0-2.0)
+  stream: false  # Enable streaming responses
+```
+
+**Compatible Services:**
+- OpenAI API
+- Ollama (local models)
+- Anthropic Claude (with compatible wrapper)
+- Any OpenAI-compatible API endpoint
+
 ## Key Features
 
 - ✅ Clean separation of concerns
 - ✅ YAML-based configuration
 - ✅ Database connection pooling with SQLAlchemy
 - ✅ Async CRM API client (Twenty CRM)
+- ✅ LLM service for OpenAI-compatible APIs (OpenAI, Ollama, etc.)
 - ✅ Type-safe with Pydantic schemas for validation
 - ✅ Schema-based validation for CRM API requests
 - ✅ Structured logging with rich formatting

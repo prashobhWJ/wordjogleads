@@ -8,7 +8,7 @@ from typing import Optional
 from app.core.dependencies import get_db
 from app.services.lead_service import LeadService
 from app.utils.logging import get_logger
-from app.schemas.leads import LeadListResponse, LeadDetail, LeadSyncResponse
+from app.schemas.leads import LeadListResponse, LeadDetail, LeadSyncResponse, SalesAgentMatchResponse
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -151,17 +151,20 @@ async def sync_leads_to_crm(
 @router.post("/leads/{lead_id}/sync", response_model=LeadSyncResponse)
 async def sync_lead_to_crm(
     lead_id: str,
+    match_sales_agent: bool = Query(True, description="Whether to match lead to sales agent before syncing"),
     db: Session = Depends(get_db)
 ):
     """
     Sync a single lead to Twenty CRM.
+    Optionally matches the lead to a sales agent before syncing.
     
     Args:
         lead_id: Lead ID (external identifier)
+        match_sales_agent: Whether to match lead to sales agent (default: True)
         db: Database session
     
     Returns:
-        CRM response
+        CRM response with optional sales agent match
     """
     try:
         service = LeadService(db)
@@ -170,7 +173,7 @@ async def sync_lead_to_crm(
         if not lead:
             raise HTTPException(status_code=404, detail=f"Lead with ID '{lead_id}' not found")
         
-        response = await service.sync_lead_to_crm(lead)
+        response = await service.sync_lead_to_crm(lead, match_sales_agent=match_sales_agent)
         
         return {
             "message": f"Lead '{lead_id}' synced successfully",
@@ -181,4 +184,47 @@ async def sync_lead_to_crm(
         raise
     except Exception as e:
         logger.error(f"[red]Error syncing lead {lead_id} to CRM:[/red] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/leads/{lead_id}/match-agent", response_model=SalesAgentMatchResponse)
+async def match_lead_to_sales_agent(
+    lead_id: str,
+    version: Optional[str] = Query(None, description="Prompt version to use (v1 or v2)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Match a lead to the best sales agent using LLM.
+    
+    Args:
+        lead_id: Lead ID (external identifier)
+        version: Prompt version to use (defaults to configured version)
+        db: Database session
+    
+    Returns:
+        Sales agent match result with selected agent and reasoning
+    """
+    try:
+        service = LeadService(db)
+        lead = service.get_lead_by_lead_id(lead_id)
+        
+        if not lead:
+            raise HTTPException(status_code=404, detail=f"Lead with ID '{lead_id}' not found")
+        
+        result = await service.match_lead_to_sales_agent(lead, version=version)
+        
+        return {
+            "message": f"Lead '{lead_id}' matched to sales agent",
+            "lead_id": lead_id,
+            "selected_agent_id": result.get("selected_agent_id"),
+            "selected_agent_name": result.get("selected_agent_name"),
+            "confidence_score": result.get("confidence_score"),
+            "reasoning": result.get("reasoning"),
+            "alternative_agents": result.get("alternative_agents", []),
+            "match_result": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[red]Error matching lead {lead_id} to sales agent:[/red] {e}")
         raise HTTPException(status_code=500, detail=str(e))

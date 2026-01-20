@@ -20,7 +20,8 @@ from app.schemas.leads import (
     LeadSummary,
     LeadDetail,
     LeadListResponse,
-    LeadSyncResponse
+    LeadSyncResponse,
+    SalesAgentMatchResponse
 )
 
 __all__ = [
@@ -42,4 +43,5 @@ __all__ = [
     "LeadDetail",
     "LeadListResponse",
     "LeadSyncResponse",
+    "SalesAgentMatchResponse",
 ]

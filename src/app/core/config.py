@@ -3,7 +3,7 @@ Application configuration settings loaded from config.yaml
 """
 import yaml
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel, AnyHttpUrl, field_validator
 
 
@@ -40,11 +40,40 @@ class CRMConfig(BaseModel):
     timeout: int = 30
 
 
+class LLMConfig(BaseModel):
+    """LLM API configuration (OpenAI-compatible)"""
+    base_url: str = "https://api.openai.com/v1"
+    api_key: Optional[str] = None
+    model: str = "gpt-3.5-turbo"
+    timeout: int = 60
+    max_tokens: int = 1000
+    temperature: float = 0.7
+    stream: bool = False
+    verify_ssl: bool = True  # Verify SSL certificates (set to False for self-signed certs)
+    prompts_file: Optional[str] = None  # Path to prompts.yaml (defaults to project root)
+    prompt_versions: Optional[Dict[str, str]] = None  # Override default prompt versions per category
+
+
 class SecurityConfig(BaseModel):
     """Security configuration"""
     secret_key: str
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+
+
+class SalesAgentConfig(BaseModel):
+    """Sales agent configuration"""
+    id: str
+    name: str
+    specialization: Optional[str] = None
+    expertise: Optional[str] = None
+    experience_years: Optional[int] = None
+    location: Optional[str] = None
+    territory: Optional[str] = None
+    current_workload: Optional[int] = None
+    success_rate: Optional[int] = None
+    vehicle_types: Optional[List[str]] = None
+    communication_style: Optional[str] = None
 
 
 class Settings(BaseModel):
@@ -67,6 +96,9 @@ class Settings(BaseModel):
     # CRM API settings
     crm: CRMConfig
     
+    # LLM API settings
+    llm: LLMConfig = LLMConfig()
+    
     # CORS settings
     backend_cors_origins: List[str] = []
     
@@ -81,6 +113,9 @@ class Settings(BaseModel):
     
     # Security settings
     security: SecurityConfig
+    
+    # Sales agents settings
+    sales_agents: List[SalesAgentConfig] = []
     
     # Logging
     log_level: str = "INFO"

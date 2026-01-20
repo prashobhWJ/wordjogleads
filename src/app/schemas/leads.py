@@ -62,3 +62,15 @@ class LeadSyncResponse(BaseSchema):
     lead_id: Optional[str] = None
     crm_response: Optional[dict] = None
     results: Optional[dict] = None
+
+
+class SalesAgentMatchResponse(BaseSchema):
+    """Response schema for sales agent matching"""
+    message: str
+    lead_id: str
+    selected_agent_id: Optional[str] = None
+    selected_agent_name: Optional[str] = None
+    confidence_score: Optional[int] = None
+    reasoning: Optional[str] = None
+    alternative_agents: Optional[List[dict]] = None
+    match_result: Optional[dict] = None

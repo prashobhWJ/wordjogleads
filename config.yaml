@@ -39,5 +39,68 @@ security:
   algorithm: "HS256"
   access_token_expire_minutes: 30
 
+# LLM API configuration (OpenAI-compatible)
+llm:
+  base_url: "http://192.168.68.58:11434/v1"  # Base URL for OpenAI-compatible API (use http:// for local Ollama)
+  api_key: null  # API key for authentication
+  model: "gemma3:12b"  # Default model to use
+  timeout: 60  # Request timeout in seconds
+  max_tokens: 1000  # Maximum tokens in response
+  temperature: 0.7  # Temperature for response generation (0.0-2.0)
+  stream: false  # Enable streaming responses
+  verify_ssl: false  # Set to false for local instances or self-signed certificates
+  prompts_file: null  # Path to prompts.yaml (null = use default in project root)
+  prompt_versions:  # Override default prompt versions (optional)
+    # system_assistant: "v2"  # Use v2 for system assistant prompts
+    # text_summarization: "v2"  # Use v2 for text summarization
+    # lead_analysis: "v2"  # Use v2 for lead analysis
+
+# Sales Agents configuration
+sales_agents:
+  - id: "AGENT001"
+    name: "John Smith"
+    specialization: "Luxury Vehicles"
+    expertise: "High-end sedans and SUVs"
+    experience_years: 8
+    location: "Downtown Showroom"
+    territory: "Downtown, Midtown"
+    current_workload: 5
+    success_rate: 85
+    vehicle_types:
+      - "Luxury Sedan"
+      - "SUV"
+      - "Sports Car"
+    communication_style: "Professional, Detail-oriented"
+  
+  - id: "AGENT002"
+    name: "Sarah Johnson"
+    specialization: "Economy & Family Vehicles"
+    expertise: "Budget-friendly options, family SUVs"
+    experience_years: 5
+    location: "Suburban Showroom"
+    territory: "Suburbs, North Region"
+    current_workload: 3
+    success_rate: 78
+    vehicle_types:
+      - "Economy Car"
+      - "Family SUV"
+      - "Minivan"
+    communication_style: "Friendly, Patient"
+  
+  - id: "AGENT003"
+    name: "Mike Davis"
+    specialization: "Trucks & Commercial Vehicles"
+    expertise: "Pickup trucks, commercial vehicles, fleet sales"
+    experience_years: 12
+    location: "Main Showroom"
+    territory: "All Regions"
+    current_workload: 7
+    success_rate: 82
+    vehicle_types:
+      - "Pickup Truck"
+      - "Commercial Vehicle"
+      - "Fleet"
+    communication_style: "Direct, Efficient"
+
 # Logging
 log_level: "INFO"
