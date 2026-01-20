@@ -45,4 +45,7 @@ class TwentyCRMTaskCreate(BaseSchema):
     """Model for creating a task in Twenty CRM"""
     title: str
     status: str = "BACKLOG"
-    assigneeId: Optional[str] = None  # Person ID to assign the task to
+    assigneeId: Optional[str] = None  # Workspace member ID to assign the task to (not person ID)
+    bodyV2: Optional[Dict[str, Any]] = None  # Task content with markdown and blocknote
+    taskTargets: Optional[List[Dict[str, str]]] = None  # Array to link task to person/company/opportunity
+    salesrep: Optional[str] = None  # Sales rep/agent assigned to this task with reasoning

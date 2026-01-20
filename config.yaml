@@ -43,13 +43,13 @@ security:
 llm:
   base_url: "http://192.168.68.58:11434/v1"  # Base URL for OpenAI-compatible API (use http:// for local Ollama)
   api_key: null  # API key for authentication
-  model: "gemma3:12b"  # Default model to use
+  model: "gemma3:27b"  # Default model to use
   timeout: 60  # Request timeout in seconds
-  max_tokens: 1000  # Maximum tokens in response
-  temperature: 0.7  # Temperature for response generation (0.0-2.0)
+  max_tokens: 2000  # Maximum tokens in response
+  temperature: 0.3  # Temperature for response generation (0.0-2.0)
   stream: false  # Enable streaming responses
   verify_ssl: false  # Set to false for local instances or self-signed certificates
-  prompts_file: null  # Path to prompts.yaml (null = use default in project root)
+  prompts_file: prompts.yaml  # Path to prompts.yaml (null = use default in project root)
   prompt_versions:  # Override default prompt versions (optional)
     # system_assistant: "v2"  # Use v2 for system assistant prompts
     # text_summarization: "v2"  # Use v2 for text summarization

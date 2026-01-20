@@ -271,8 +271,20 @@ class LeadService:
                         f"Task may not be linked to person.[/yellow]"
                     )
             
-            # Create task for this person
-            task_data = lead_to_task_data(lead, person_id=person_id)
+            # Create task for this person (include sales agent match info if available)
+            task_data = lead_to_task_data(
+                lead, 
+                person_id=person_id,
+                sales_agent_match=sales_agent_match
+            )
+            
+            # Log task data for debugging
+            logger.debug(f"[dim]Task data before sending to CRM:[/dim] {task_data}")
+            if sales_agent_match:
+                logger.info(
+                    f"[cyan]Task includes sales agent match:[/cyan] "
+                    f"{sales_agent_match.get('selected_agent_name', 'N/A')}"
+                )
             
             try:
                 task_response = await self.crm_client.create_record(

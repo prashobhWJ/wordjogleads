@@ -2,6 +2,7 @@
 Twenty CRM specific models and utilities
 """
 from typing import Optional, List, Dict, Any, Tuple
+from app.utils.logging import get_logger
 from app.schemas.twenty_crm import (
     TwentyCRMName,
     TwentyCRMEmails,
@@ -10,6 +11,8 @@ from app.schemas.twenty_crm import (
     TwentyCRMPersonCreate,
     TwentyCRMTaskCreate
 )
+
+logger = get_logger(__name__)
 
 
 def parse_phone_number(phone: str, country_code: Optional[str] = None) -> Tuple[str, Optional[str], Optional[str]]:
@@ -185,15 +188,21 @@ def lead_to_twenty_crm(lead) -> Dict[str, Any]:
     return person_create.model_dump(exclude_none=False)
 
 
-def lead_to_task_data(lead, person_id: Optional[str] = None) -> Dict[str, Any]:
+def lead_to_task_data(
+    lead, 
+    person_id: Optional[str] = None,
+    sales_agent_match: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
     Convert a Lead to a task data structure for Twenty CRM.
     Uses Pydantic schemas for validation.
     Task name will be the lead's full name.
+    Optionally includes sales agent matching information in task content.
     
     Args:
         lead: Lead model instance from database
         person_id: Optional person ID to link the task to
+        sales_agent_match: Optional sales agent match result from LLM
     
     Returns:
         Dictionary in Twenty CRM task format (validated by TwentyCRMTaskCreate schema)
@@ -210,17 +219,105 @@ def lead_to_task_data(lead, person_id: Optional[str] = None) -> Dict[str, Any]:
         else:
             task_name = lead.email or lead.lead_id or "Unknown Lead"
     
+    # Build task content/description with lead information only
+    # Sales agent information is stored in the salesrep field, not in bodyV2
+    task_content_parts = []
+    
+    # Add lead information (always include basic info)
+    task_content_parts.append("LEAD INFORMATION:")
+    if lead.email:
+        task_content_parts.append(f"Email: {lead.email}")
+    if lead.phone:
+        task_content_parts.append(f"Phone: {lead.phone}")
+    if lead.vehicle_type:
+        task_content_parts.append(f"Vehicle Interest: {lead.vehicle_type}")
+    if lead.city or lead.state_province:
+        location = ", ".join(filter(None, [lead.city, lead.state_province]))
+        task_content_parts.append(f"Location: {location}")
+    if lead.company_name:
+        task_content_parts.append(f"Company: {lead.company_name}")
+    if lead.employment_status:
+        task_content_parts.append(f"Employment Status: {lead.employment_status}")
+    
+    # Always create content, even if minimal
+    task_content = "\n".join(task_content_parts) if task_content_parts else "Lead sync from Carnance API"
+    
+    # Build bodyV2 structure for task content (always include content)
+    body_v2 = {
+        "markdown": task_content,
+        "blocknote": task_content  # Using same content for blocknote format
+    }
+    
+    # Build taskTargets array to link task to person
+    task_targets = None
+    if person_id:
+        task_targets = [
+            {
+                "personId": person_id
+            }
+        ]
+    
+    # Extract sales rep information from sales agent match with reasoning
+    sales_rep_value = None
+    if sales_agent_match and sales_agent_match.get("selected_agent_id"):
+        selected_agent_name = sales_agent_match.get("selected_agent_name", "Unknown")
+        selected_agent_id = sales_agent_match.get("selected_agent_id", "")
+        reasoning = sales_agent_match.get("reasoning", "")
+        
+        # Format: Include agent name, ID, and full reasoning
+        if reasoning:
+            sales_rep_value = f"{selected_agent_name} (ID: {selected_agent_id}) - {reasoning}"
+        else:
+            sales_rep_value = f"{selected_agent_name} (ID: {selected_agent_id})"
+    
+    # Log sales agent match status for debugging
+    if sales_agent_match:
+        logger.info(
+            f"[cyan]Sales agent match data available:[/cyan] "
+            f"Agent: {sales_agent_match.get('selected_agent_name', 'N/A')}, "
+            f"Has reasoning: {bool(sales_agent_match.get('reasoning'))}"
+        )
+        logger.debug(f"[dim]Full sales agent match data:[/dim] {sales_agent_match}")
+        if sales_rep_value:
+            logger.info(f"[cyan]Sales Rep field will be set to:[/cyan] {sales_rep_value[:100]}...")
+    else:
+        logger.warning("[yellow]⚠️  No sales agent match data provided to task creation[/yellow]")
+    
     # Create and validate the task schema
     task_create = TwentyCRMTaskCreate(
         title=task_name,
         status="BACKLOG",
-        assigneeId=person_id
+        assigneeId=None,  # assigneeId is for workspace member, not person
+        bodyV2=body_v2,
+        taskTargets=task_targets,
+        salesrep=sales_rep_value
     )
     
     # Return as dict (Pydantic model_dump)
-    # Note: We also add personId for backward compatibility if person_id is provided
     task_dict = task_create.model_dump(exclude_none=True)
-    if person_id:
-        task_dict["personId"] = person_id
+    
+    # Ensure bodyV2 is included (should already be there from schema)
+    if 'bodyV2' not in task_dict:
+        task_dict['bodyV2'] = body_v2
+    
+    # Note: Do NOT add 'body' or 'description' fields - Twenty CRM REST API rejects them
+    # Only bodyV2 with markdown and blocknote is accepted
+    
+    # Log what we're sending to the API
+    logger.info(f"[cyan]Task data being sent to CRM:[/cyan]")
+    logger.info(f"[dim]  Title: {task_dict.get('title')}[/dim]")
+    logger.info(f"[dim]  Status: {task_dict.get('status')}[/dim]")
+    logger.info(f"[dim]  Has bodyV2: {bool(task_dict.get('bodyV2'))}[/dim]")
+    logger.info(f"[dim]  Has taskTargets: {bool(task_dict.get('taskTargets'))}[/dim]")
+    logger.info(f"[dim]  salesrep: {task_dict.get('salesrep', 'Not set')[:100] if task_dict.get('salesrep') else 'Not set'}...[/dim]")
+    if task_dict.get('bodyV2'):
+        content_preview = task_dict['bodyV2'].get('markdown', '')[:200] if isinstance(task_dict['bodyV2'], dict) else str(task_dict['bodyV2'])[:200]
+        logger.info(f"[dim]  bodyV2.markdown preview: {content_preview}...[/dim]")
+    
+    line_count = len(task_content.split('\n')) if task_content else 0
+    logger.info(
+        f"[green]✅ Task content includes {line_count} lines[/green] "
+        f"[dim](includes sales agent info: {bool(sales_agent_match and sales_agent_match.get('selected_agent_id'))})[/dim]"
+    )
     
     return task_dict
