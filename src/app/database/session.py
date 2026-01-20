@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from typing import Optional
 
 from app.database.connection import DatabasePool
-from app.models.base import Base
+from app.database.models.base import Base
 
 
 # Session factory - will be initialized after pool is ready

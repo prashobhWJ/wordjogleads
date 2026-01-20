@@ -3,7 +3,7 @@ Database models for PostgreSQL tables.
 Add your SQLAlchemy models here.
 """
 from sqlalchemy import Column, String, Text, Boolean, Date, Numeric
-from app.models.base import BaseModel
+from app.database.models.base import BaseModel
 
 
 class Lead(BaseModel):

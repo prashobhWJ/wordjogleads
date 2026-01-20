@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
-from app.models.database import Lead
+from app.database.models.database import Lead
 from app.external.crm.client import CRMClient
 from app.external.crm.twenty_crm import lead_to_twenty_crm
 from app.utils.logging import get_logger, app_logger

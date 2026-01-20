@@ -17,7 +17,7 @@ src/
 │   │       ├── dependencies.py # API-specific dependencies
 │   │       └── endpoints/       # Individual endpoint modules
 │   │           ├── __init__.py
-│   │           └── example.py  # Example endpoint (replace with your endpoints)
+│   │           └── leads.py    # Leads API endpoints
 │   │
 │   ├── core/                   # Core configuration
 │   │   ├── __init__.py
@@ -26,37 +26,40 @@ src/
 │   │
 │   ├── database/               # Database connection management
 │   │   ├── __init__.py
-│   │   ├── connection.py      # Database engine creation
-│   │   └── session.py         # Session management
-│   │
-│   ├── models/                 # SQLAlchemy database models
-│   │   ├── __init__.py
-│   │   ├── base.py            # Base model class
-│   │   └── database.py        # Your database models
+│   │   ├── connection.py      # Database engine and connection pool
+│   │   ├── session.py         # Session management
+│   │   ├── models/            # SQLAlchemy database models
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py        # Base model class
+│   │   │   └── database.py    # Database models (Lead, etc.)
+│   │   └── sqls/              # SQL scripts
+│   │       ├── 01_create_leads_table.sql
+│   │       ├── 02_insert_sample_leads.sql
+│   │       ├── 03_drop_leads_table.sql
+│   │       └── README.md
 │   │
 │   ├── schemas/                # Pydantic schemas for validation
 │   │   ├── __init__.py
-│   │   └── base.py            # Base schema classes
+│   │   ├── base.py            # Base schema classes
+│   │   ├── leads.py           # Lead API request/response schemas
+│   │   └── twenty_crm.py      # Twenty CRM API schemas
 │   │
 │   ├── services/               # Business logic layer
 │   │   ├── __init__.py
-│   │   └── base_service.py    # Base service class
-│   │
-│   ├── repositories/           # Data access layer
-│   │   ├── __init__.py
-│   │   └── base_repository.py # Base repository class
+│   │   └── lead_service.py    # Lead service with CRM sync logic
 │   │
 │   ├── external/               # External API clients
 │   │   └── crm/
 │   │       ├── __init__.py
 │   │       ├── client.py      # CRM REST API client
-│   │       └── models.py      # CRM API models
+│   │       └── twenty_crm.py # Twenty CRM utilities and conversions
 │   │
 │   └── utils/                  # Utility functions
 │       ├── __init__.py
 │       ├── logging.py         # Logging configuration
-│       ├── helpers.py         # General helper functions
-│       └── exceptions.py      # Custom exception classes
+│       ├── helpers.py          # General helper functions
+│       ├── exceptions.py       # Custom exception classes
+│       └── logging_example.py  # Logging usage examples
 │
 ├── requirements.txt            # Python dependencies
 ├── config.yaml                 # Application configuration (not in git)
@@ -69,17 +72,16 @@ src/
 
 1. **API Layer** (`app/api/`): Handles HTTP requests/responses, routing, and validation
 2. **Service Layer** (`app/services/`): Contains business logic and orchestrates operations
-3. **Repository Layer** (`app/repositories/`): Handles direct database access and queries
-4. **External Layer** (`app/external/`): Manages interactions with external APIs (CRM)
-5. **Models** (`app/models/`): SQLAlchemy ORM models for database tables
-6. **Schemas** (`app/schemas/`): Pydantic models for request/response validation
+3. **External Layer** (`app/external/`): Manages interactions with external APIs (CRM)
+4. **Models** (`app/database/models/`): SQLAlchemy ORM models for database tables
+5. **Schemas** (`app/schemas/`): Pydantic models for request/response validation
 
 ### Data Flow
 
 ```
-Request → API Endpoint → Service → Repository → Database
+Request → API Endpoint → Service → Database (SQLAlchemy queries)
                               ↓
-                         CRM Client → External CRM API
+                         CRM Client → External CRM API (Twenty CRM)
 ```
 
 ## Setup
@@ -131,73 +133,96 @@ Request → API Endpoint → Service → Repository → Database
 ### Creating a Service
 
 ```python
-# app/services/contact_service.py
-from app.services.base_service import BaseService
-from app.models.database import Contact
+# app/services/lead_service.py
+from typing import List, Optional
+from sqlalchemy.orm import Session
+from app.database.models.database import Lead
 from app.external.crm.client import CRMClient
-from app.external.crm.models import CRMContactCreate
+from app.external.crm.twenty_crm import lead_to_twenty_crm
 
-class ContactService(BaseService):
-    def __init__(self, db):
-        super().__init__(db, Contact)
+class LeadService:
+    """Service for managing leads and syncing to Twenty CRM"""
+    
+    def __init__(self, db: Session):
+        self.db = db
         self.crm_client = CRMClient()
     
-    async def create_contact_with_crm(self, contact_data):
-        # Create in database
-        db_contact = self.create(**contact_data.dict())
-        
-        # Create in CRM
-        crm_data = CRMContactCreate(
-            first_name=contact_data.first_name,
-            last_name=contact_data.last_name,
-            email=contact_data.email
+    def get_all_leads(self, skip: int = 0, limit: int = 100) -> List[Lead]:
+        """Get all leads from the database"""
+        return self.db.query(Lead).offset(skip).limit(limit).all()
+    
+    async def sync_lead_to_crm(self, lead: Lead) -> dict:
+        """Sync a single lead to Twenty CRM"""
+        crm_data = lead_to_twenty_crm(lead)
+        response = await self.crm_client.create_record(
+            endpoint="rest/people",
+            data=crm_data,
+            params={"upsert": True}
         )
-        crm_response = await self.crm_client.create_record(
-            "/contacts",
-            crm_data.dict()
-        )
-        
-        return db_contact, crm_response
+        return response
 ```
 
 ### Creating an Endpoint
 
 ```python
-# app/api/v1/endpoints/contacts.py
-from fastapi import APIRouter, Depends
+# app/api/v1/endpoints/leads.py
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.core.dependencies import get_db
-from app.services.contact_service import ContactService
+from app.services.lead_service import LeadService
+from app.schemas.leads import LeadListResponse
 
 router = APIRouter()
 
-@router.post("/contacts")
-async def create_contact(
-    contact_data: ContactCreate,
+@router.get("/leads", response_model=LeadListResponse)
+async def get_leads(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db)
 ):
-    service = ContactService(db)
-    return await service.create_contact_with_crm(contact_data)
+    service = LeadService(db)
+    leads = service.get_all_leads(skip=skip, limit=limit)
+    return {
+        "total": len(leads),
+        "skip": skip,
+        "limit": limit,
+        "leads": leads
+    }
 ```
 
 ## Key Features
 
 - ✅ Clean separation of concerns
 - ✅ YAML-based configuration
-- ✅ Database connection pooling
-- ✅ Async CRM API client
-- ✅ Type-safe with Pydantic schemas
-- ✅ Base classes for services and repositories
-- ✅ Structured logging
+- ✅ Database connection pooling with SQLAlchemy
+- ✅ Async CRM API client (Twenty CRM)
+- ✅ Type-safe with Pydantic schemas for validation
+- ✅ Schema-based validation for CRM API requests
+- ✅ Structured logging with rich formatting
 - ✅ Custom exception handling
 - ✅ API versioning support
 - ✅ CORS configuration
+- ✅ Response models for all API endpoints
+
+## API Endpoints
+
+### Leads
+
+- `GET /api/v1/leads` - Get all leads (with pagination)
+- `GET /api/v1/leads/{lead_id}` - Get a specific lead by lead_id
+- `POST /api/v1/leads/sync` - Sync all leads to Twenty CRM
+- `POST /api/v1/leads/{lead_id}/sync` - Sync a single lead to Twenty CRM
+
+### Health Check
+
+- `GET /health` - Health check endpoint with database pool status
 
 ## Next Steps
 
-1. Replace example models in `app/models/database.py` with your actual database models
-2. Create your service classes in `app/services/`
-3. Create your endpoint modules in `app/api/v1/endpoints/`
-4. Customize the CRM client in `app/external/crm/client.py` based on your CRM API
+1. Add more database models in `app/database/models/database.py` as needed
+2. Create additional service classes in `app/services/` for new entities
+3. Create new endpoint modules in `app/api/v1/endpoints/`
+4. Add request schemas in `app/schemas/` for POST/PUT endpoints
 5. Add authentication/authorization as needed
 6. Set up database migrations with Alembic
+7. Add unit tests for services and endpoints
