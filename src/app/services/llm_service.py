@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, List, AsyncGenerator
 from app.core.config import settings
 from app.utils.logging import get_logger
 from app.utils.prompt_manager import get_prompt_manager
+import json
 
 logger = get_logger(__name__)
 
@@ -339,7 +340,6 @@ class LLMService:
             lead_dict = {"lead_info": str(lead_data)}
         
         # Format lead info as readable text
-        import json
         lead_info_lines = []
         lead_info_lines.append(f"Lead ID: {lead_dict.get('lead_id', 'N/A')}")
         # Build full name
@@ -433,7 +433,6 @@ class LLMService:
             response_text = response["choices"][0]["message"]["content"]
             
             # Parse JSON response
-            import json
             try:
                 # Try to extract JSON from response (in case there's extra text)
                 response_text = response_text.strip()

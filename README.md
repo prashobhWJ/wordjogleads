@@ -2,6 +2,14 @@
 
 FastAPI-based REST API framework for reading data from PostgreSQL and creating records in a CRM system.
 
+## Twenty CRM Routing Example
+
+The following diagram illustrates routing in action within Twenty CRM:
+
+![Twenty CRM Routing Example](Architecture/Routing.png)
+
+*Example of routing workflow in Twenty CRM showing how leads are processed and routed to sales agents*
+
 ## Project Structure
 
 ```

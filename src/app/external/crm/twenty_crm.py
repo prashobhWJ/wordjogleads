@@ -219,56 +219,87 @@ def lead_to_task_data(
         else:
             task_name = lead.email or lead.lead_id or "Unknown Lead"
     
-    # Build task content/description with lead information only
-    # Sales agent information is stored in the salesrep field, not in bodyV2
-    task_content_parts = []
+    # Build task content with lead information and sales agent assignment
+    # Format as professional markdown
     
-    # Add lead information (always include basic info)
-    task_content_parts.append("LEAD INFORMATION:")
+    # Get lead full name
+    full_name = lead.full_name or ""
+    if not full_name:
+        if lead.first_name and lead.last_name:
+            full_name = f"{lead.first_name} {lead.last_name}"
+        elif lead.first_name:
+            full_name = lead.first_name
+        elif lead.last_name:
+            full_name = lead.last_name
+        else:
+            full_name = lead.email or lead.lead_id or "Unknown Lead"
+    
+    # Build markdown content
+    markdown_parts = []
+    
+    # Lead Information Section
+    markdown_parts.append("### 👤 LEAD INFORMATION\n")
+    markdown_parts.append(f"**Name:** {full_name}")
     if lead.email:
-        task_content_parts.append(f"Email: {lead.email}")
+        markdown_parts.append(f"**Email:** {lead.email}")
     if lead.phone:
-        task_content_parts.append(f"Phone: {lead.phone}")
+        markdown_parts.append(f"**Phone:** {lead.phone}")
     if lead.vehicle_type:
-        task_content_parts.append(f"Vehicle Interest: {lead.vehicle_type}")
+        markdown_parts.append(f"**Vehicle Interest:** {lead.vehicle_type}")
     if lead.city or lead.state_province:
         location = ", ".join(filter(None, [lead.city, lead.state_province]))
-        task_content_parts.append(f"Location: {location}")
+        markdown_parts.append(f"**Location:** {location}")
     if lead.company_name:
-        task_content_parts.append(f"Company: {lead.company_name}")
+        markdown_parts.append(f"**Company:** {lead.company_name}")
     if lead.employment_status:
-        task_content_parts.append(f"Employment Status: {lead.employment_status}")
+        markdown_parts.append(f"**Employment Status:** {lead.employment_status}")
     
-    # Always create content, even if minimal
-    task_content = "\n".join(task_content_parts) if task_content_parts else "Lead sync from Carnance API"
+    # Add sales agent assignment section if available
+    if sales_agent_match and sales_agent_match.get("selected_agent_id"):
+        markdown_parts.append("\n---\n")
+        markdown_parts.append("### 🎯 SALES AGENT ASSIGNMENT\n")
+        
+        selected_agent_name = sales_agent_match.get("selected_agent_name", "Unknown")
+        selected_agent_id = sales_agent_match.get("selected_agent_id", "N/A")
+        confidence_score = sales_agent_match.get("confidence_score", "N/A")
+        reasoning = sales_agent_match.get("reasoning", "No reasoning provided")
+        
+        markdown_parts.append(f"**Assigned Agent:** {selected_agent_name}")
+        markdown_parts.append(f"**Agent ID:** {selected_agent_id}")
+        markdown_parts.append(f"**Confidence Score:** {confidence_score}/10\n")
+        
+        markdown_parts.append("### 📋 Assignment Reasoning\n")
+        markdown_parts.append(f"{reasoning}\n")
+        
+        # Add alternative agents if available
+        alternative_agents = sales_agent_match.get("alternative_agents", [])
+        if alternative_agents:
+            markdown_parts.append("\n### 🔄 Alternative Agents\n")
+            for alt_agent in alternative_agents[:3]:  # Limit to top 3 alternatives
+                alt_name = alt_agent.get("agent_name", alt_agent.get("agent_id", "Unknown"))
+                alt_reason = alt_agent.get("reason", "Alternative option")
+                markdown_parts.append(f"- **{alt_name}:** {alt_reason}")
     
-    # Build bodyV2 structure for task content (always include content)
+    # Join all parts with newlines to create markdown content
+    # Format using f-string style like the example provided
+    markdown_content = "\n".join(markdown_parts) if markdown_parts else "Lead sync from Carnance API"
+    
+    # Build bodyV2 structure for task content
+    # Format: Use f-string style markdown formatting as shown in example
+    # Only include markdown field, not blocknote
     body_v2 = {
-        "markdown": task_content,
-        "blocknote": task_content  # Using same content for blocknote format
+        "markdown": markdown_content
     }
     
-    # Build taskTargets array to link task to person
-    task_targets = None
-    if person_id:
-        task_targets = [
-            {
-                "personId": person_id
-            }
-        ]
+    # Log the content being created for debugging
+    logger.info(f"[cyan]bodyV2 content created:[/cyan] {len(markdown_content)} characters")
+    logger.debug(f"[dim]bodyV2 markdown preview:[/dim] {markdown_content[:500]}...")
     
-    # Extract sales rep information from sales agent match with reasoning
-    sales_rep_value = None
-    if sales_agent_match and sales_agent_match.get("selected_agent_id"):
-        selected_agent_name = sales_agent_match.get("selected_agent_name", "Unknown")
-        selected_agent_id = sales_agent_match.get("selected_agent_id", "")
-        reasoning = sales_agent_match.get("reasoning", "")
-        
-        # Format: Include agent name, ID, and full reasoning
-        if reasoning:
-            sales_rep_value = f"{selected_agent_name} (ID: {selected_agent_id}) - {reasoning}"
-        else:
-            sales_rep_value = f"{selected_agent_name} (ID: {selected_agent_id})"
+    # Note: taskTargets cannot be set via REST API during task creation
+    # The error "One-to-many relation taskTargets field does not support write operations" 
+    # indicates we must link tasks to persons through a different method (likely GraphQL or separate API call)
+    # For now, we'll skip taskTargets in the creation payload
+    task_targets = None
     
     # Log sales agent match status for debugging
     if sales_agent_match:
@@ -278,43 +309,60 @@ def lead_to_task_data(
             f"Has reasoning: {bool(sales_agent_match.get('reasoning'))}"
         )
         logger.debug(f"[dim]Full sales agent match data:[/dim] {sales_agent_match}")
-        if sales_rep_value:
-            logger.info(f"[cyan]Sales Rep field will be set to:[/cyan] {sales_rep_value[:100]}...")
     else:
         logger.warning("[yellow]⚠️  No sales agent match data provided to task creation[/yellow]")
     
     # Create and validate the task schema
+    # Note: taskTargets is excluded as it cannot be set via REST API during creation
     task_create = TwentyCRMTaskCreate(
         title=task_name,
         status="BACKLOG",
         assigneeId=None,  # assigneeId is for workspace member, not person
         bodyV2=body_v2,
-        taskTargets=task_targets,
-        salesrep=sales_rep_value
+        taskTargets=None  # Cannot be set via REST API - must be linked separately
     )
     
     # Return as dict (Pydantic model_dump)
+    # Use exclude_none=True to exclude None values (like taskTargets)
     task_dict = task_create.model_dump(exclude_none=True)
     
+    # Remove taskTargets if it exists (cannot be set via REST API)
+    if 'taskTargets' in task_dict:
+        del task_dict['taskTargets']
+        logger.debug("[dim]Removed taskTargets from payload (not supported via REST API)[/dim]")
+    
     # Ensure bodyV2 is included (should already be there from schema)
-    if 'bodyV2' not in task_dict:
+    if 'bodyV2' not in task_dict or task_dict.get('bodyV2') is None:
         task_dict['bodyV2'] = body_v2
     
+    # Verify bodyV2 structure before sending
+    if task_dict.get('bodyV2'):
+        if not isinstance(task_dict['bodyV2'], dict):
+            logger.warning(f"[yellow]bodyV2 is not a dict, converting...[/yellow]")
+            task_dict['bodyV2'] = body_v2
+        elif not task_dict['bodyV2'].get('markdown'):
+            logger.warning(f"[yellow]bodyV2.markdown is missing, adding...[/yellow]")
+            task_dict['bodyV2'] = body_v2
+    
     # Note: Do NOT add 'body' or 'description' fields - Twenty CRM REST API rejects them
-    # Only bodyV2 with markdown and blocknote is accepted
+    # Only bodyV2 with markdown field is accepted (no blocknote needed)
     
     # Log what we're sending to the API
     logger.info(f"[cyan]Task data being sent to CRM:[/cyan]")
     logger.info(f"[dim]  Title: {task_dict.get('title')}[/dim]")
     logger.info(f"[dim]  Status: {task_dict.get('status')}[/dim]")
     logger.info(f"[dim]  Has bodyV2: {bool(task_dict.get('bodyV2'))}[/dim]")
-    logger.info(f"[dim]  Has taskTargets: {bool(task_dict.get('taskTargets'))}[/dim]")
-    logger.info(f"[dim]  salesrep: {task_dict.get('salesrep', 'Not set')[:100] if task_dict.get('salesrep') else 'Not set'}...[/dim]")
+    logger.info(f"[dim]  taskTargets: Excluded (not supported via REST API)[/dim]")
     if task_dict.get('bodyV2'):
-        content_preview = task_dict['bodyV2'].get('markdown', '')[:200] if isinstance(task_dict['bodyV2'], dict) else str(task_dict['bodyV2'])[:200]
-        logger.info(f"[dim]  bodyV2.markdown preview: {content_preview}...[/dim]")
+        body_v2_data = task_dict['bodyV2']
+        if isinstance(body_v2_data, dict):
+            markdown_preview = body_v2_data.get('markdown', '')[:300]
+            logger.info(f"[dim]  bodyV2.markdown ({len(body_v2_data.get('markdown', ''))} chars):[/dim]")
+            logger.info(f"[dim]{markdown_preview}...[/dim]")
+        else:
+            logger.warning(f"[yellow]bodyV2 is not a dict: {type(body_v2_data)}[/yellow]")
     
-    line_count = len(task_content.split('\n')) if task_content else 0
+    line_count = len(markdown_content.split('\n')) if markdown_content else 0
     logger.info(
         f"[green]✅ Task content includes {line_count} lines[/green] "
         f"[dim](includes sales agent info: {bool(sales_agent_match and sales_agent_match.get('selected_agent_id'))})[/dim]"
