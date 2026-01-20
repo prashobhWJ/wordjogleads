@@ -1,6 +1,6 @@
 # Wordjog Lead routing API
 
-FastAPI-based REST API framework for reading data about leads and routing it to appropriate sales representatives in CRM systems.
+FastAPI-based REST API framework for reading data from PostgreSQL and creating records in a CRM system.
 
 ## Twenty CRM Routing Example
 
