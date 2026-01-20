@@ -1,0 +1,43 @@
+# Carnance API Configuration
+
+# Project settings
+project_name: "Carnance API"
+version: "1.0.0"
+description: "FastAPI REST API for CRM integration"
+api_v1_str: "/api/v1"
+
+# Database configuration
+database:
+  server: "localhost"
+  user: "wjadmuser01"
+  password: "myagentpwd579%"
+  db: "wjplanagent"
+  port: "5432"
+  schema: "carnance"        # PostgreSQL schema name (default: "public")
+  pool:
+    size: 10              # Number of connections to maintain in pool
+    max_overflow: 20      # Maximum overflow connections
+    timeout: 30           # Seconds to wait for a connection
+    recycle: 3600         # Seconds before recycling a connection (1 hour)
+    echo: false           # Set to true to log SQL queries
+
+# CRM API configuration
+crm:
+  base_url: "http://localhost:3000"  # Twenty CRM base URL
+  api_key: null  # Not used for Twenty CRM
+  api_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNWFlYmQxZS0xYzQ4LTQwYjMtODk0Ni00Nzk1YWU5YjM2OWMiLCJ0eXBlIjoiQVBJX0tFWSIsIndvcmtzcGFjZUlkIjoiZjVhZWJkMWUtMWM0OC00MGIzLTg5NDYtNDc5NWFlOWIzNjljIiwiaWF0IjoxNzY4NTc0NTgwLCJleHAiOjQ5MjIxNzQ1NzksImp0aSI6IjdjMzM4NTE0LTZkMGQtNDY0OS04YTA0LTcxYWE3ZmRkZDcwYyJ9.Mi9xGCajflfBeRAetukrCCGNap27W6xx51f6hSX7PRw"  # Bearer token for Twenty CRM
+  timeout: 30
+
+# CORS origins (list of allowed origins)
+backend_cors_origins:
+  - "http://localhost:3000"
+  - "http://localhost:8000"
+
+# Security configuration
+security:
+  secret_key: "your-secret-key-here-change-in-production"
+  algorithm: "HS256"
+  access_token_expire_minutes: 30
+
+# Logging
+log_level: "INFO"

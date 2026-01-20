@@ -1,0 +1,44 @@
+# Carnance API Configuration
+# Copy this file to config.yaml and update with your actual values
+
+# Project settings
+project_name: "Carnance API"
+version: "1.0.0"
+description: "FastAPI REST API for CRM integration"
+api_v1_str: "/api/v1"
+
+# Database configuration
+database:
+  server: "localhost"
+  user: "your_db_user"
+  password: "your_db_password"
+  db: "your_database_name"
+  port: "5432"
+  schema: "public"        # PostgreSQL schema name (default: "public")
+  pool:
+    size: 10              # Number of connections to maintain in pool
+    max_overflow: 20      # Maximum overflow connections
+    timeout: 30           # Seconds to wait for a connection
+    recycle: 3600         # Seconds before recycling a connection (1 hour)
+    echo: false           # Set to true to log SQL queries
+
+# CRM API configuration
+crm:
+  base_url: "https://api.crm.example.com"
+  api_key: "your_crm_api_key"  # Optional
+  api_token: "your_crm_api_token"  # Optional
+  timeout: 30
+
+# CORS origins (list of allowed origins)
+backend_cors_origins:
+  - "http://localhost:3000"
+  - "http://localhost:8000"
+
+# Security configuration
+security:
+  secret_key: "your-secret-key-here-change-in-production"
+  algorithm: "HS256"
+  access_token_expire_minutes: 30
+
+# Logging
+log_level: "INFO"

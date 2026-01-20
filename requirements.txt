@@ -1,0 +1,53 @@
+# FastAPI and server
+#fastapi==0.104.1
+#uvicorn[standard]==0.24.0
+
+# Database
+#sqlalchemy==2.0.23
+#psycopg2-binary==2.9.9
+#alembic==1.12.1
+
+# Pydantic for data validation
+#pydantic==2.5.0
+
+# YAML configuration
+#pyyaml==6.0.1
+
+# HTTP client for external APIs
+#httpx==0.25.1
+
+# Rich logging for beautiful terminal output
+#rich==13.7.0
+
+# Testing (optional)
+# pytest==7.4.3
+# pytest-asyncio==0.21.1
+# httpx==0.25.1  # For testing FastAPI
+
+
+# FastAPI and server
+fastapi==0.115.9        # Latest 0.115.x series, stable with Pydantic v2 [web:5]
+uvicorn[standard]==0.30.6
+
+# Database
+sqlalchemy==2.0.35      # Late 2.0.x, widely used with FastAPI stacks [web:2]
+psycopg[binary]  # Still current and stable [web:2]
+alembic==1.13.2         # Matches SQLAlchemy 2.0.35 well [web:2]
+
+# Pydantic for data validation
+pydantic==2.8.0         # Minimum recommended by recent FastAPI releases [web:1]
+
+# YAML configuration
+pyyaml==6.0.1
+
+# HTTP client for external APIs
+httpx==0.27.2           # 0.27.x line is current and stable for async usage [web:2]
+
+# Rich logging for beautiful terminal output
+rich==13.9.4            # 13.x line is actively maintained
+
+# Testing (optional)
+pytest==8.3.3           # Current 8.x line, used in recent FastAPI/SQLModel examples [web:2]
+pytest-asyncio==0.23.8  # Compatible with pytest 8.x
+# httpx==0.27.2         # Match main dependency for test client
+
