@@ -81,6 +81,10 @@ class LeadService:
                 agent_dict["location"] = agent.location
             if agent.territory:
                 agent_dict["territory"] = agent.territory
+            if agent.primary_language:
+                agent_dict["primary_language"] = agent.primary_language
+            if agent.secondary_language:
+                agent_dict["secondary_language"] = agent.secondary_language
             if agent.current_workload is not None:
                 agent_dict["current_workload"] = agent.current_workload
             if agent.success_rate is not None:
@@ -272,7 +276,7 @@ class LeadService:
                     )
             
             # Create task for this person (include sales agent match info if available)
-            task_data = lead_to_task_data(
+            task_data = await lead_to_task_data(
                 lead, 
                 person_id=person_id,
                 sales_agent_match=sales_agent_match

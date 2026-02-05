@@ -3,6 +3,7 @@ Twenty CRM specific models and utilities
 """
 from typing import Optional, List, Dict, Any, Tuple
 from app.utils.logging import get_logger
+from app.services.llm_service import LLMService
 from app.schemas.twenty_crm import (
     TwentyCRMName,
     TwentyCRMEmails,
@@ -188,7 +189,7 @@ def lead_to_twenty_crm(lead) -> Dict[str, Any]:
     return person_create.model_dump(exclude_none=False)
 
 
-def lead_to_task_data(
+async def lead_to_task_data(
     lead, 
     person_id: Optional[str] = None,
     sales_agent_match: Optional[Dict[str, Any]] = None
@@ -234,54 +235,157 @@ def lead_to_task_data(
         else:
             full_name = lead.email or lead.lead_id or "Unknown Lead"
     
-    # Build markdown content
-    markdown_parts = []
+    # Determine primary language from sales agent match
+    primary_language = "English"  # Default to English
+    if sales_agent_match:
+        assignment_message = sales_agent_match.get("assignment_message")
+        if assignment_message:
+            primary_language = assignment_message.get("primary_language", "English")
+    
+    # Helper function to translate content lines (not headers)
+    async def translate_content_lines(lines: List[str], target_language: str) -> List[str]:
+        """Translate content lines to target language, preserving structure"""
+        if target_language.lower() == "english":
+            return lines
+        
+        # Join lines for translation
+        content_text = "\n".join(lines)
+        if not content_text.strip():
+            return lines
+        
+        try:
+            llm_service = LLMService()
+            translation_prompt = f"""Translate ONLY the text content in the following lines to {target_language}. 
+Preserve all markdown formatting exactly:
+- Keep **bold** markers exactly as they are
+- Keep colons (:) exactly as they are  
+- Keep numbers and scores exactly as they are
+- Only translate the English words, not the markdown syntax
+
+Lines to translate:
+{content_text}"""
+            
+            translated = await llm_service.simple_prompt(
+                prompt=translation_prompt,
+                system_prompt=f"You are a professional translator. Translate ONLY the text content to {target_language}, preserving all markdown formatting, colons, numbers, and structure exactly."
+            )
+            
+            # Split back into lines
+            translated_lines = translated.strip().split("\n")
+            return translated_lines if translated_lines else lines
+        except Exception as e:
+            logger.warning(f"[yellow]⚠️  Failed to translate content to {target_language}:[/yellow] {e}")
+            return lines
+    
+    # Build content sections separately for primary language and English
+    primary_parts = []
+    english_parts = []
     
     # Lead Information Section
-    markdown_parts.append("### 👤 LEAD INFORMATION\n")
-    markdown_parts.append(f"**Name:** {full_name}")
+    lead_info_english_lines = []
+    lead_info_english_lines.append(f"**Name:** {full_name}")
     if lead.email:
-        markdown_parts.append(f"**Email:** {lead.email}")
+        lead_info_english_lines.append(f"**Email:** {lead.email}")
     if lead.phone:
-        markdown_parts.append(f"**Phone:** {lead.phone}")
+        lead_info_english_lines.append(f"**Phone:** {lead.phone}")
     if lead.vehicle_type:
-        markdown_parts.append(f"**Vehicle Interest:** {lead.vehicle_type}")
+        lead_info_english_lines.append(f"**Vehicle Interest:** {lead.vehicle_type}")
     if lead.city or lead.state_province:
         location = ", ".join(filter(None, [lead.city, lead.state_province]))
-        markdown_parts.append(f"**Location:** {location}")
+        lead_info_english_lines.append(f"**Location:** {location}")
     if lead.company_name:
-        markdown_parts.append(f"**Company:** {lead.company_name}")
+        lead_info_english_lines.append(f"**Company:** {lead.company_name}")
     if lead.employment_status:
-        markdown_parts.append(f"**Employment Status:** {lead.employment_status}")
+        lead_info_english_lines.append(f"**Employment Status:** {lead.employment_status}")
     
-    # Add sales agent assignment section if available
+    # Translate lead info content
+    lead_info_primary_lines = await translate_content_lines(lead_info_english_lines, primary_language)
+    
+    # Build sections for both languages
+    if primary_language.lower() != "english":
+        # Primary language section
+        primary_parts.append("### 👤 LEAD INFORMATION")
+        primary_parts.extend(lead_info_primary_lines)
+        # English section (will be added after primary)
+        english_parts.append("### 👤 LEAD INFORMATION")
+        english_parts.extend(lead_info_english_lines)
+    else:
+        # If primary is English, just use English
+        english_parts.append("### 👤 LEAD INFORMATION")
+        english_parts.extend(lead_info_english_lines)
+    
+    # Sales Agent Assignment Section (if available)
     if sales_agent_match and sales_agent_match.get("selected_agent_id"):
-        markdown_parts.append("\n---\n")
-        markdown_parts.append("### 🎯 SALES AGENT ASSIGNMENT\n")
-        
         selected_agent_name = sales_agent_match.get("selected_agent_name", "Unknown")
         selected_agent_id = sales_agent_match.get("selected_agent_id", "N/A")
         confidence_score = sales_agent_match.get("confidence_score", "N/A")
         reasoning = sales_agent_match.get("reasoning", "No reasoning provided")
         
-        markdown_parts.append(f"**Assigned Agent:** {selected_agent_name}")
-        markdown_parts.append(f"**Agent ID:** {selected_agent_id}")
-        markdown_parts.append(f"**Confidence Score:** {confidence_score}/10\n")
-        
-        markdown_parts.append("### 📋 Assignment Reasoning\n")
-        markdown_parts.append(f"{reasoning}\n")
+        # Build English assignment content lines
+        assignment_english_lines = []
+        assignment_english_lines.append(f"**Assigned Agent:** {selected_agent_name}")
+        assignment_english_lines.append(f"**Agent ID:** {selected_agent_id}")
+        assignment_english_lines.append(f"**Confidence Score:** {confidence_score}/10")
+        assignment_english_lines.append("")
+        assignment_english_lines.append("### 📋 Assignment Reasoning")
+        assignment_english_lines.append(f"{reasoning}")
         
         # Add alternative agents if available
         alternative_agents = sales_agent_match.get("alternative_agents", [])
         if alternative_agents:
-            markdown_parts.append("\n### 🔄 Alternative Agents\n")
+            assignment_english_lines.append("")
+            assignment_english_lines.append("### 🔄 Alternative Agents")
             for alt_agent in alternative_agents[:3]:  # Limit to top 3 alternatives
                 alt_name = alt_agent.get("agent_name", alt_agent.get("agent_id", "Unknown"))
                 alt_reason = alt_agent.get("reason", "Alternative option")
-                markdown_parts.append(f"- **{alt_name}:** {alt_reason}")
+                assignment_english_lines.append(f"- **{alt_name}:** {alt_reason}")
+        
+        # Translate assignment content
+        assignment_primary_lines = await translate_content_lines(assignment_english_lines, primary_language)
+        
+        # Add assignment section to both languages
+        if primary_language.lower() != "english":
+            # Primary language section
+            primary_parts.append("")
+            primary_parts.append("---")
+            primary_parts.append("")
+            primary_parts.append("### 🎯 SALES AGENT ASSIGNMENT")
+            primary_parts.extend(assignment_primary_lines)
+            # English section (will be added after primary)
+            english_parts.append("")
+            english_parts.append("---")
+            english_parts.append("")
+            english_parts.append("### 🎯 SALES AGENT ASSIGNMENT")
+            english_parts.extend(assignment_english_lines)
+        else:
+            # If primary is English, just use English
+            english_parts.append("")
+            english_parts.append("---")
+            english_parts.append("")
+            english_parts.append("### 🎯 SALES AGENT ASSIGNMENT")
+            english_parts.extend(assignment_english_lines)
     
-    # Join all parts with newlines to create markdown content
-    # Format using f-string style like the example provided
+    # Build final markdown: Primary language first, then English
+    markdown_parts = []
+    
+    if primary_language.lower() != "english":
+        # Add primary language section header
+        markdown_parts.append(f"## {primary_language.upper()}")
+        markdown_parts.append("")
+        markdown_parts.extend(primary_parts)
+        # Add separator
+        markdown_parts.append("")
+        markdown_parts.append("---")
+        markdown_parts.append("")
+        # Add English section header
+        markdown_parts.append("## ENGLISH")
+        markdown_parts.append("")
+        markdown_parts.extend(english_parts)
+    else:
+        # If primary is English, just use English content
+        markdown_parts.extend(english_parts)
+    
+    # Join all parts to create final markdown content
     markdown_content = "\n".join(markdown_parts) if markdown_parts else "Lead sync from Carnance API"
     
     # Build bodyV2 structure for task content

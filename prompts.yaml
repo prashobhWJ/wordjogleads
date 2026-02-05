@@ -22,6 +22,8 @@ prompts:
         - Experience: 8 years in automotive sales
         - Location: Downtown Showroom
         - Territory: Downtown, Midtown areas
+        - Primary Language: English
+        - Secondary Language: Spanish
         - Description: John is a seasoned luxury vehicle specialist with an impeccable track record. 
           He has extensive knowledge of premium brands including Mercedes-Benz, BMW, Audi, and Lexus. 
           John excels at working with affluent clients who value quality, craftsmanship, and prestige. 
@@ -40,6 +42,8 @@ prompts:
         - Experience: 5 years in automotive sales
         - Location: Suburban Showroom
         - Territory: Suburbs, North Region
+        - Primary Language: French
+        - Secondary Language: Spanish
         - Description: Sarah is a warm and patient sales professional who specializes in helping 
           families find the perfect vehicle. She has deep expertise in budget-friendly options, 
           family SUVs, and minivans. Sarah is particularly skilled at working with first-time 
@@ -59,6 +63,8 @@ prompts:
         - Experience: 12 years in automotive sales
         - Location: Main Showroom
         - Territory: All Regions
+        - Primary Language: Spanish
+        - Secondary Language: English
         - Description: Mike is a veteran sales professional with extensive experience in trucks 
           and commercial vehicles. He has deep technical knowledge of towing capacity, payload 
           specifications, and work applications. Mike works frequently with business owners, 
@@ -142,6 +148,17 @@ prompts:
                         Audi, and Lexus. His attention to detail and ability to explain complex features 
                         aligns perfectly with this lead's interest in luxury vehicles. His 85% success 
                         rate and relationship-focused approach make him perfect for this high-budget buyer.'>",
+          "assignment_message": {{
+            "primary_language": "<agent's primary language from profile>",
+            "primary_text": "<assignment message in primary language. Example: 'You have been assigned 
+                            a new lead: [Lead Name]. This lead is interested in [vehicle type] and is 
+                            located in [location]. Please contact them at [email/phone] to discuss their 
+                            vehicle needs.'>",
+            "secondary_language": "<agent's secondary language from profile>",
+            "secondary_text": "<translated assignment message in secondary language. Translate the 
+                             primary_text to the agent's secondary language. Ensure the translation is 
+                             natural and professional.>"
+          }},
           "alternative_agents": [
             {{
               "agent_id": "<agent_id>",
@@ -150,6 +167,10 @@ prompts:
             }}
           ]
         }}
+        
+        IMPORTANT: The assignment_message must include both primary and secondary language versions 
+        based on the selected agent's language capabilities from their profile. Translate the primary 
+        text to the secondary language accurately and professionally.
         
         Return ONLY valid JSON, no additional text.
       description: "Matches leads to best sales agent based on lead requirements and agent capabilities"
@@ -226,6 +247,18 @@ prompts:
                        explain complex features aligns perfectly with this lead's interest in luxury vehicles. 
                        His professional, relationship-focused approach and 85% success rate make him ideal 
                        for this high-budget buyer who values quality and prestige.'>",
+          "assignment_message": {{
+            "primary_language": "<agent's primary language from profile>",
+            "primary_text": "<assignment message in primary language. Include lead details: name, vehicle 
+                            interest, location, contact information. Example: 'You have been assigned a new 
+                            lead: [Lead Name]. This lead is interested in [vehicle type] and is located in 
+                            [location]. Please contact them at [email/phone] to discuss their vehicle needs 
+                            and provide personalized assistance.'>",
+            "secondary_language": "<agent's secondary language from profile>",
+            "secondary_text": "<translated assignment message in secondary language. Translate the 
+                             primary_text to the agent's secondary language accurately and professionally. 
+                             Maintain the same level of formality and include all lead details.>"
+          }},
           "alternative_agents": [
             {{
               "agent_id": "<agent_id>",
@@ -235,6 +268,11 @@ prompts:
             }}
           ]
         }}
+        
+        IMPORTANT: The assignment_message must include both primary and secondary language versions 
+        based on the selected agent's language capabilities from their profile. Translate the primary 
+        text to the secondary language accurately and professionally, maintaining all lead details and 
+        professional tone.
         
         Return ONLY valid JSON.
       description: "Enhanced matching with detailed factor analysis and scoring"

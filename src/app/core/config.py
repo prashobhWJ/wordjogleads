@@ -74,6 +74,8 @@ class SalesAgentConfig(BaseModel):
     experience_years: Optional[int] = None
     location: Optional[str] = None
     territory: Optional[str] = None
+    primary_language: Optional[str] = None
+    secondary_language: Optional[str] = None
     current_workload: Optional[int] = None
     success_rate: Optional[int] = None
     vehicle_types: Optional[List[str]] = None

@@ -23,9 +23,9 @@ database:
 
 # CRM API configuration
 crm:
-  base_url: "http://localhost:3000"  # Twenty CRM base URL
+  base_url: "https://wordjog.twenty.com"  # Twenty CRM base URL
   api_key: null  # Not used for Twenty CRM
-  api_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjMTA2M2QyYy04M2M5LTQ5YjQtODk2ZC1lNzc1ZWIxYzkyYjgiLCJ0eXBlIjoiQVBJX0tFWSIsIndvcmtzcGFjZUlkIjoiYzEwNjNkMmMtODNjOS00OWI0LTg5NmQtZTc3NWViMWM5MmI4IiwiaWF0IjoxNzY5NTE1MTcxLCJleHAiOjQ5MjMxMTUxNzAsImp0aSI6IjdmNTYwNmUxLTdiOTYtNGQxYi1hNGQxLWM1MWQ4M2JiMjE5ZiJ9.KijCTF3DJLR07NDsjYwjiPtEJ-AGsFlIXFgr9raY5jw"
+  api_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxZjRmYTg2Yi0xOGFhLTQyZWQtYTc1NS1lOTQyNTBiNGIzODgiLCJ0eXBlIjoiQVBJX0tFWSIsIndvcmtzcGFjZUlkIjoiMWY0ZmE4NmItMThhYS00MmVkLWE3NTUtZTk0MjUwYjRiMzg4IiwiaWF0IjoxNzcwMjk5NDIxLCJleHAiOjQ5MjM4MTMwMTksImp0aSI6ImVlYjg4YjE5LTQwZjgtNDFlOC1hYmRiLTZkMjE2ZGRjMDIzYSJ9.P4fJQ0Vhx_CD_-i47cKsDBUcX8MaEi-voIh185tk9PM"
   timeout: 30
 
 # CORS origins (list of allowed origins)
@@ -47,7 +47,7 @@ llm:
   #model: "ministral-3:14b-instruct-2512-q8_0"  # Default model to use (OpenAI model name or Bedrock model ID)
   provider: "bedrock"
   bedrock_region: "us-east-1"
-  bedrock_model_id: "mistral.mistral-large-2402-v1:0" #"google.gemma-3-27b-it" #"mistral.mistral-7b-instruct-v0:2"
+  bedrock_model_id: "mistral.mistral-large-2402-v1:0"  #"mistral.mistral-7b-instruct-2402-v1:0" #"google.gemma-3-27b-it" #"mistral.mistral-7b-instruct-v0:2"
   max_tokens: 8192
   temperature: 0.7  
   timeout: 60  # Request timeout in seconds
@@ -74,6 +74,8 @@ sales_agents:
     experience_years: 8
     location: "Downtown Showroom"
     territory: "Downtown, Midtown"
+    primary_language: "English"
+    secondary_language: "Spanish"
     current_workload: 5
     success_rate: 85
     vehicle_types:
@@ -89,6 +91,8 @@ sales_agents:
     experience_years: 5
     location: "Suburban Showroom"
     territory: "Suburbs, North Region"
+    primary_language: "English"
+    secondary_language: "Spanish"
     current_workload: 3
     success_rate: 78
     vehicle_types:
@@ -104,6 +108,8 @@ sales_agents:
     experience_years: 12
     location: "Main Showroom"
     territory: "All Regions"
+    primary_language: "English"
+    secondary_language: "Spanish"
     current_workload: 7
     success_rate: 82
     vehicle_types:

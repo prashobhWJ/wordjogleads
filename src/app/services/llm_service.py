@@ -710,6 +710,7 @@ class LLMService:
                 selected_agent_id = result.get("selected_agent_id", "N/A")
                 confidence = result.get("confidence_score", "N/A")
                 reasoning = result.get("reasoning", "No reasoning provided")
+                assignment_message = result.get("assignment_message")
                 
                 logger.info(
                     f"[green]✅ Selected Sales Agent:[/green] "
@@ -717,6 +718,17 @@ class LLMService:
                     f"(ID: {selected_agent_id}, Confidence: {confidence}/10)"
                 )
                 logger.info(f"[dim]Reasoning:[/dim] {reasoning}")
+                
+                # Log assignment message if available
+                if assignment_message:
+                    primary_lang = assignment_message.get("primary_language", "N/A")
+                    secondary_lang = assignment_message.get("secondary_language", "N/A")
+                    logger.info(
+                        f"[cyan]Assignment message available:[/cyan] "
+                        f"Primary: {primary_lang}, Secondary: {secondary_lang}"
+                    )
+                else:
+                    logger.debug("[dim]No assignment_message in LLM response[/dim]")
                 
                 return result
             except json.JSONDecodeError as e:
