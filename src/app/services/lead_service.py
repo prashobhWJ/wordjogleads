@@ -9,6 +9,7 @@ from app.database.models.database import Lead
 from app.external.crm.client import CRMClient
 from app.external.crm.twenty_crm import lead_to_twenty_crm
 from app.services.llm_service import LLMService
+from app.services.email_service import EmailService
 from app.core.config import settings
 from app.utils.logging import get_logger, app_logger
 
@@ -22,6 +23,15 @@ class LeadService:
         self.db = db
         self.crm_client = CRMClient()
         self.llm_service = LLMService()
+        # Initialize email service if configured, handle import errors gracefully
+        try:
+            self.email_service = EmailService() if settings.email else None
+        except (ImportError, ValueError) as e:
+            logger.warning(
+                f"[yellow]⚠️  Email service not available:[/yellow] {e}. "
+                f"Email processing will not be available."
+            )
+            self.email_service = None
     
     def get_all_leads(
         self,
@@ -338,16 +348,30 @@ class LeadService:
         limit: Optional[int] = None
     ) -> dict:
         """
-        Sync all leads from database to Twenty CRM.
+        Sync all leads to Twenty CRM.
+        Routes to email processing if lead_source.type is "email", otherwise uses database.
         
         Args:
-            skip: Number of leads to skip
+            skip: Number of leads to skip (for database source only)
             limit: Maximum number of leads to sync (None for all)
         
         Returns:
             Dictionary with sync results
         """
-        app_logger.info(f"[cyan]Starting sync of leads to Twenty CRM...[/cyan]")
+        # Check lead source type from configuration
+        lead_source_type = settings.lead_source.type.lower() if settings.lead_source else "db"
+        
+        if lead_source_type == "email":
+            # Route to email processing
+            app_logger.info(f"[cyan]Lead source is 'email', processing emails instead of database...[/cyan]")
+            max_emails = limit or 50  # Use limit as max_emails for email processing
+            return await self.process_emails_to_leads(
+                max_emails=max_emails,
+                match_sales_agent=True
+            )
+        
+        # Default: sync from database
+        app_logger.info(f"[cyan]Starting sync of leads from database to Twenty CRM...[/cyan]")
         
         leads = self.get_all_leads(skip=skip, limit=limit or 1000)
         total = len(leads)
@@ -402,3 +426,394 @@ class LeadService:
         )
         
         return results
+    
+    async def process_emails_to_leads(
+        self,
+        max_emails: int = 50,
+        match_sales_agent: bool = True
+    ) -> dict:
+        """
+        Process recent emails (within configured time period) from Microsoft 365,
+        extract lead information, and sync to CRM with reasoning notes.
+        
+        Only emails that arrived within the last N minutes (configured via 
+        recent_email_minutes in config.yaml) will be processed.
+        
+        Args:
+            max_emails: Maximum number of emails to process (default: 50)
+            match_sales_agent: Whether to match leads to sales agents (default: True)
+        
+        Returns:
+            Dictionary with processing results
+        """
+        if not self.email_service:
+            raise ValueError(
+                "Email service not configured. Please set email configuration in config.yaml"
+            )
+        
+        app_logger.info("[cyan]Starting email processing to extract leads...[/cyan]")
+        
+        try:
+            # Get recent emails (filtered by recent_email_minutes from config)
+            emails = await self.email_service.get_recent_emails(max_results=max_emails)
+            
+            if not emails:
+                app_logger.info("[yellow]No recent emails found (within configured time period)[/yellow]")
+                return {
+                    "total": 0,
+                    "success": 0,
+                    "failed": 0,
+                    "results": []
+                }
+            
+            app_logger.info(f"[cyan]Found {len(emails)} recent email(s) to process (within configured time period)[/cyan]")
+            
+            results = {
+                "total": len(emails),
+                "success": 0,
+                "failed": 0,
+                "results": []
+            }
+            
+            for idx, email in enumerate(emails, 1):
+                try:
+                    app_logger.info(
+                        f"[cyan][{idx}/{len(emails)}][/cyan] "
+                        f"Processing email: [yellow]{email.get('subject', 'No Subject')[:50]}...[/yellow]"
+                    )
+                    
+                    # Extract lead information from email using LLM
+                    lead_data = await self.llm_service.extract_lead_from_email(
+                        email_content=email.get("body", "") or email.get("body_preview", ""),
+                        email_subject=email.get("subject", ""),
+                        sender_email=email.get("sender", "")
+                    )
+                    
+                    # Create a Lead-like object from the extracted data
+                    # We'll use a simple dict-based approach since we're not storing in DB
+                    class EmailLead:
+                        """Temporary Lead-like object for email leads"""
+                        def __init__(self, data: Dict[str, Any]):
+                            for key, value in data.items():
+                                setattr(self, key, value)
+                    
+                    email_lead = EmailLead(lead_data)
+                    
+                    # Sync to CRM (this will create person and task with reasoning notes)
+                    sync_result = await self.sync_email_lead_to_crm(
+                        email_lead,
+                        email_id=email.get("id"),
+                        match_sales_agent=match_sales_agent
+                    )
+                    
+                    # Mark email as read if configured (skipped in read-only mode)
+                    if email.get("id") and not self.email_service.read_only:
+                        await self.email_service.mark_email_as_read(email.get("id"))
+                    
+                    results["success"] += 1
+                    results["results"].append({
+                        "email_id": email.get("id"),
+                        "email_subject": email.get("subject"),
+                        "lead_id": lead_data.get("lead_id"),
+                        "status": "success",
+                        "crm_response": sync_result
+                    })
+                    
+                    app_logger.info(
+                        f"[green]✅ Successfully processed email:[/green] "
+                        f"[cyan]{email.get('subject', 'No Subject')[:50]}...[/cyan]"
+                    )
+                    
+                except Exception as e:
+                    results["failed"] += 1
+                    results["results"].append({
+                        "email_id": email.get("id"),
+                        "email_subject": email.get("subject"),
+                        "status": "failed",
+                        "error": str(e)
+                    })
+                    logger.error(
+                        f"[red]Failed to process email {email.get('id', 'unknown')}:[/red] {e}"
+                    )
+            
+            app_logger.info(
+                f"[green]Email processing completed:[/green] "
+                f"[cyan]{results['success']}[/cyan] successful, "
+                f"[red]{results['failed']}[/red] failed out of {results['total']} total"
+            )
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"[red]❌ Failed to process emails:[/red] {e}")
+            raise
+    
+    async def sync_email_lead_to_crm(
+        self,
+        lead: Any,  # Lead-like object (EmailLead or Lead model)
+        email_id: Optional[str] = None,
+        match_sales_agent: bool = True
+    ) -> dict:
+        """
+        Sync an email-extracted lead to Twenty CRM.
+        Creates a person and task with reasoning notes.
+        Reuses existing sync logic.
+        
+        Args:
+            lead: Lead-like object (EmailLead or Lead model instance)
+            email_id: Optional email ID for tracking
+            match_sales_agent: Whether to match lead to sales agent (default: True)
+        
+        Returns:
+            Dictionary with person and task creation responses
+        """
+        sales_agent_match = None
+        
+        # Match lead to sales agent if requested
+        if match_sales_agent:
+            try:
+                # Convert lead to dict for matching
+                if hasattr(lead, '__dict__'):
+                    lead_dict = lead.__dict__
+                elif isinstance(lead, dict):
+                    lead_dict = lead
+                else:
+                    lead_dict = {}
+                
+                # Create a temporary Lead-like object for matching
+                class TempLead:
+                    def __init__(self, data):
+                        for k, v in data.items():
+                            setattr(self, k, v)
+                
+                temp_lead = TempLead(lead_dict)
+                sales_agent_match = await self.match_lead_to_sales_agent(temp_lead)
+                
+                logger.info(
+                    f"[cyan]Sales agent matched for email lead:[/cyan] "
+                    f"{sales_agent_match.get('selected_agent_name', 'N/A')}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[yellow]⚠️  Sales agent matching failed for email lead:[/yellow] {e}. "
+                    f"Continuing with CRM sync..."
+                )
+        
+        from app.external.crm.twenty_crm import lead_to_twenty_crm, lead_to_task_data
+        import httpx
+        
+        person_response = None
+        person_id = None
+        person_created = False
+        
+        try:
+            # Convert lead to Twenty CRM format
+            crm_data = lead_to_twenty_crm(lead)
+            
+            # Try to create person in Twenty CRM
+            try:
+                person_response = await self.crm_client.create_record(
+                    endpoint="rest/people",
+                    data=crm_data,
+                    params={"upsert": True}
+                )
+                person_created = True
+                logger.info(
+                    f"[green]✅ Successfully created person in CRM:[/green] "
+                    f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan] - "
+                    f"{getattr(lead, 'full_name', None) or getattr(lead, 'email', 'N/A')}"
+                )
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400:
+                    try:
+                        error_data = e.response.json()
+                        error_messages = error_data.get("messages", [])
+                        error_text = " ".join(error_messages).lower() + " " + str(error_data).lower() + " " + e.response.text.lower()
+                    except:
+                        error_text = e.response.text.lower()
+                    
+                    is_duplicate = (
+                        "duplicate entry" in error_text or 
+                        "duplicate entry was detected" in error_text or
+                        ("duplicate" in error_text and "entry" in error_text) or
+                        ("already exists" in error_text and "person" in error_text)
+                    )
+                    
+                    is_invalid_phone = (
+                        "invalid phone number" in error_text or
+                        "invalid_phone_number" in error_text or
+                        "invalid phone" in error_text
+                    )
+                    
+                    if is_duplicate:
+                        logger.warning(
+                            f"[yellow]⚠️  Person already exists in CRM (duplicate detected):[/yellow] "
+                            f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan]. "
+                            f"Skipping person creation, continuing with task creation..."
+                        )
+                        person_response = None
+                        person_id = None
+                        person_created = False
+                    elif is_invalid_phone and not settings.crm.validate_phone_numbers:
+                        # Phone number validation is disabled, retry without phone number
+                        logger.warning(
+                            f"[yellow]⚠️  Invalid phone number detected, retrying without phone (validation disabled):[/yellow] "
+                            f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan]"
+                        )
+                        # Remove phone number from CRM data and retry
+                        crm_data_no_phone = crm_data.copy()
+                        if 'phones' in crm_data_no_phone:
+                            crm_data_no_phone['phones'] = None
+                        try:
+                            person_response = await self.crm_client.create_record(
+                                endpoint="rest/people",
+                                data=crm_data_no_phone,
+                                params={"upsert": True}
+                            )
+                            person_created = True
+                            logger.info(
+                                f"[green]✅ Successfully created person in CRM (without phone):[/green] "
+                                f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan] - "
+                                f"{getattr(lead, 'full_name', None) or getattr(lead, 'email', 'N/A')}"
+                            )
+                        except Exception as retry_error:
+                            logger.error(
+                                f"[red]❌ Failed to create person even without phone:[/red] "
+                                f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan]"
+                            )
+                            logger.error(f"[dim]Error details:[/dim] {retry_error}")
+                            raise
+                    else:
+                        logger.error(
+                            f"[red]❌ Failed to create person (400 Bad Request):[/red] "
+                            f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan]"
+                        )
+                        logger.error(f"[dim]Error details:[/dim] {e.response.text}")
+                        raise
+                elif e.response.status_code in [502, 503, 504]:
+                    # Retry for transient server errors (Bad Gateway, Service Unavailable, Gateway Timeout)
+                    import asyncio
+                    max_retries = 3
+                    retry_delay = 2  # seconds
+                    
+                    for retry_count in range(max_retries):
+                        logger.warning(
+                            f"[yellow]⚠️  Server error {e.response.status_code}, retrying ({retry_count + 1}/{max_retries}):[/yellow] "
+                            f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan]"
+                        )
+                        await asyncio.sleep(retry_delay * (retry_count + 1))  # Exponential backoff
+                        
+                        try:
+                            person_response = await self.crm_client.create_record(
+                                endpoint="rest/people",
+                                data=crm_data,
+                                params={"upsert": True}
+                            )
+                            person_created = True
+                            logger.info(
+                                f"[green]✅ Successfully created person in CRM (after retry):[/green] "
+                                f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan] - "
+                                f"{getattr(lead, 'full_name', None) or getattr(lead, 'email', 'N/A')}"
+                            )
+                            break
+                        except httpx.HTTPStatusError as retry_error:
+                            if retry_count == max_retries - 1:
+                                # Last retry failed
+                                logger.error(
+                                    f"[red]❌ Failed to create person after {max_retries} retries (HTTP {retry_error.response.status_code}):[/red] "
+                                    f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan]"
+                                )
+                                logger.error(f"[dim]Error details:[/dim] {retry_error.response.text[:500]}")
+                                raise
+                            elif retry_error.response.status_code not in [502, 503, 504]:
+                                # Different error, don't retry
+                                raise
+                    else:
+                        # All retries exhausted
+                        raise
+                else:
+                    logger.error(
+                        f"[red]❌ Failed to create person (HTTP {e.response.status_code}):[/red] "
+                        f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan]"
+                    )
+                    logger.error(f"[dim]Error details:[/dim] {e.response.text[:500]}")
+                    raise
+            except httpx.HTTPError as e:
+                logger.error(
+                    f"[red]❌ HTTP error creating person:[/red] "
+                    f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan] - {str(e)}"
+                )
+                raise
+            
+            # Extract person ID from response
+            if person_response and isinstance(person_response, dict):
+                person_id = (
+                    person_response.get("id") or 
+                    person_response.get("personId") or 
+                    person_response.get("person") or
+                    person_response.get("data", {}).get("id") if isinstance(person_response.get("data"), dict) else None
+                )
+                
+                if not person_id:
+                    logger.debug(f"[dim]Person response structure:[/dim] {person_response}")
+                    logger.warning(
+                        f"[yellow]⚠️  Could not extract person ID from response. "
+                        f"Task may not be linked to person.[/yellow]"
+                    )
+            
+            # Create task for this person (include sales agent match info if available)
+            task_data = await lead_to_task_data(
+                lead, 
+                person_id=person_id,
+                sales_agent_match=sales_agent_match
+            )
+            
+            # Log task data for debugging
+            logger.debug(f"[dim]Task data before sending to CRM:[/dim] {task_data}")
+            if sales_agent_match:
+                logger.info(
+                    f"[cyan]Task includes sales agent match:[/cyan] "
+                    f"{sales_agent_match.get('selected_agent_name', 'N/A')}"
+                )
+            
+            try:
+                task_response = await self.crm_client.create_record(
+                    endpoint="rest/tasks",
+                    data=task_data
+                )
+                
+                logger.info(
+                    f"[green]✅ Successfully created task in CRM:[/green] "
+                    f"[cyan]Task: {task_data['title']}[/cyan] for person {person_id or 'N/A'}"
+                )
+                
+                return {
+                    "person": person_response,
+                    "person_created": person_created,
+                    "task": task_response,
+                    "person_id": person_id,
+                    "sales_agent_match": sales_agent_match,
+                    "email_id": email_id
+                }
+                
+            except Exception as task_error:
+                logger.warning(
+                    f"[yellow]⚠️  Person {'created' if person_created else 'found'} but task creation failed:[/yellow] "
+                    f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan] - {str(task_error)}"
+                )
+                return {
+                    "person": person_response,
+                    "person_created": person_created,
+                    "task": None,
+                    "task_error": str(task_error),
+                    "person_id": person_id,
+                    "sales_agent_match": sales_agent_match,
+                    "email_id": email_id
+                }
+            
+        except Exception as e:
+            logger.error(
+                f"[red]❌ Failed to sync email lead to CRM:[/red] "
+                f"[cyan]{getattr(lead, 'lead_id', email_id or 'N/A')}[/cyan] - {str(e)}"
+            )
+            raise

@@ -42,6 +42,7 @@ dependencies = [
     # Rich logging for beautiful terminal output
     "rich==13.9.4",
     "aioboto3>=15.5.0",
+    "aioimaplib>=2.0.1",
 ]
 
 [project.optional-dependencies]

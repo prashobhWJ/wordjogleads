@@ -38,6 +38,7 @@ class CRMConfig(BaseModel):
     api_key: Optional[str] = None
     api_token: Optional[str] = None
     timeout: int = 30
+    validate_phone_numbers: bool = True  # Set to false to skip phone numbers if validation fails
 
 
 class LLMConfig(BaseModel):
@@ -82,6 +83,32 @@ class SalesAgentConfig(BaseModel):
     communication_style: Optional[str] = None
 
 
+class EmailConfig(BaseModel):
+    """Email configuration for IMAP/POP3"""
+    provider: str = "imap"  # "imap" or "pop3"
+    server: Optional[str] = None
+    port: int = 993  # IMAP: 993 (SSL), 143 (non-SSL) | POP3: 995 (SSL), 110 (non-SSL)
+    use_ssl: bool = True
+    auth_method: str = "oauth2"  # "oauth2" for Microsoft 365, "password" for basic auth
+    # OAuth2 settings (for Microsoft 365/Outlook)
+    tenant_id: Optional[str] = None
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+    mailbox: Optional[str] = None  # Email address for OAuth2
+    # Basic auth settings (for non-OAuth2 providers)
+    username: Optional[str] = None
+    password: Optional[str] = None
+    folder: str = "INBOX"  # For IMAP, use "INBOX" or folder name
+    read_only: bool = True  # Read-only mode (does not mark emails as read)
+    check_interval: int = 300  # seconds
+    recent_email_minutes: int = 60  # Time period in minutes to filter recent emails
+
+
+class LeadSourceConfig(BaseModel):
+    """Lead source configuration"""
+    type: str = "db"  # "db" or "email"
+
+
 class Settings(BaseModel):
     """Application settings loaded from config.yaml"""
     
@@ -122,6 +149,12 @@ class Settings(BaseModel):
     
     # Sales agents settings
     sales_agents: List[SalesAgentConfig] = []
+    
+    # Lead source settings
+    lead_source: LeadSourceConfig = LeadSourceConfig()
+    
+    # Email settings (for email lead source)
+    email: Optional[EmailConfig] = None
     
     # Logging
     log_level: str = "INFO"

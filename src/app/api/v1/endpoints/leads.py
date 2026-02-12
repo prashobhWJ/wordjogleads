@@ -125,10 +125,15 @@ async def sync_leads_to_crm(
     db: Session = Depends(get_db)
 ):
     """
-    Sync all leads from database to Twenty CRM.
+    Sync all leads to Twenty CRM.
+    
+    The lead source (database or email) is determined by the `lead_source.type` 
+    setting in config.yaml:
+    - If "db": Syncs leads from the database
+    - If "email": Processes unread emails and extracts leads
     
     Args:
-        skip: Number of leads to skip
+        skip: Number of leads to skip (for database source only)
         limit: Maximum number of leads to sync (None for all)
         db: Database session
     
@@ -227,4 +232,51 @@ async def match_lead_to_sales_agent(
         raise
     except Exception as e:
         logger.error(f"[red]Error matching lead {lead_id} to sales agent:[/red] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/leads/process-emails", response_model=LeadSyncResponse)
+async def process_emails_to_leads(
+    max_emails: int = Query(50, ge=1, le=100, description="Maximum number of emails to process"),
+    match_sales_agent: bool = Query(True, description="Whether to match leads to sales agents"),
+    db: Session = Depends(get_db)
+):
+    """
+    Process recent emails (within configured time period) from Microsoft 365,
+    extract lead information using LLM, and sync to CRM with reasoning notes.
+    
+    Only emails that arrived within the last N minutes (configured via 
+    recent_email_minutes in config.yaml) will be processed.
+    
+    This endpoint:
+    1. Reads recent unread emails from the configured mailbox (filtered by time period)
+    2. Uses LLM to extract lead information from email content
+    3. Matches leads to sales agents (if enabled)
+    4. Creates persons and tasks in CRM with reasoning notes
+    5. Marks processed emails as read (if configured)
+    
+    Args:
+        max_emails: Maximum number of emails to process (default: 50, max: 100)
+        match_sales_agent: Whether to match leads to sales agents (default: True)
+        db: Database session
+    
+    Returns:
+        Processing results with success/failure counts
+    """
+    try:
+        service = LeadService(db)
+        results = await service.process_emails_to_leads(
+            max_emails=max_emails,
+            match_sales_agent=match_sales_agent
+        )
+        
+        return {
+            "message": "Email processing completed",
+            "results": results
+        }
+    except ValueError as e:
+        logger.error(f"[red]Error processing emails:[/red] {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[red]Error processing emails:[/red] {e}")
         raise HTTPException(status_code=500, detail=str(e))

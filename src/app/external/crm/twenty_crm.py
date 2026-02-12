@@ -4,6 +4,7 @@ Twenty CRM specific models and utilities
 from typing import Optional, List, Dict, Any, Tuple
 from app.utils.logging import get_logger
 from app.services.llm_service import LLMService
+from app.core.config import settings
 from app.schemas.twenty_crm import (
     TwentyCRMName,
     TwentyCRMEmails,
@@ -48,11 +49,26 @@ def parse_phone_number(phone: str, country_code: Optional[str] = None) -> Tuple[
         "NU": "CA",  # Nunavut, Canada
     }
     
+    # Map full country names to ISO country codes
+    country_name_to_code = {
+        "CANADA": "CA",
+        "UNITED STATES": "US",
+        "USA": "US",
+        "UNITED STATES OF AMERICA": "US",
+        "FRANCE": "FR",
+        "UNITED KINGDOM": "GB",
+        "UK": "GB",
+        "GREAT BRITAIN": "GB",
+    }
+    
     # Normalize country code
     if country_code:
-        country_code = country_code.upper()
+        country_code = country_code.upper().strip()
+        # Convert full country name to ISO code
+        if country_code in country_name_to_code:
+            country_code = country_name_to_code[country_code]
         # Convert province code to country code
-        if country_code in province_to_country:
+        elif country_code in province_to_country:
             country_code = province_to_country[country_code]
     
     # Remove common formatting but keep spaces for now
@@ -136,12 +152,25 @@ def lead_to_twenty_crm(lead) -> Dict[str, Any]:
         first_name = name_parts[0] if len(name_parts) > 0 else ""
         last_name = name_parts[1] if len(name_parts) > 1 else ""
     
-    # Parse phone number - use country_code from lead if available
+    # Parse phone number - always try to extract phone from lead
+    # If validation is disabled, we'll still include it but handle errors gracefully
+    phones = None
     lead_country_code = lead.country_code or lead.country
     phone_number, calling_code, country_code = parse_phone_number(
         lead.phone or "",
         country_code=lead_country_code
     )
+    
+    # Build phones if available (only skip if validation disabled AND no phone number)
+    if phone_number:
+        phones = TwentyCRMPhones(
+            primaryPhoneNumber=phone_number,
+            primaryPhoneCallingCode=calling_code,
+            primaryPhoneCountryCode=country_code,
+            additionalPhones=[]
+        )
+    elif not settings.crm.validate_phone_numbers:
+        logger.debug("[dim]Phone number validation disabled and no phone number found[/dim]")
     
     # Build schema objects for validation
     name = TwentyCRMName(
@@ -166,15 +195,11 @@ def lead_to_twenty_crm(lead) -> Dict[str, Any]:
         secondaryLinks=[]
     )
     
-    # Build phones if available
-    phones = None
-    if phone_number:
-        phones = TwentyCRMPhones(
-            primaryPhoneNumber=phone_number,
-            primaryPhoneCallingCode=calling_code,
-            primaryPhoneCountryCode=country_code,
-            additionalPhones=[]
-        )
+    # Extract additional fields from lead
+    vehicle_type = getattr(lead, 'vehicle_type', None)
+    city = getattr(lead, 'city', None)
+    employment_length = getattr(lead, 'employment_length', None) or getattr(lead, 'length_at_company', None)
+    company_name = getattr(lead, 'company_name', None)
     
     # Create and validate the person schema
     person_create = TwentyCRMPersonCreate(
@@ -182,11 +207,16 @@ def lead_to_twenty_crm(lead) -> Dict[str, Any]:
         emails=emails,
         linkedinLink=linkedin_link,
         xLink=x_link,
-        phones=phones
+        phones=phones,
+        vehicletype=vehicle_type,
+        city=city,
+        employmentlength=employment_length,
+        companyname=company_name
     )
     
     # Return as dict (Pydantic model_dump)
-    return person_create.model_dump(exclude_none=False)
+    # Use exclude_none=True to exclude None values for optional fields
+    return person_create.model_dump(exclude_none=True)
 
 
 async def lead_to_task_data(

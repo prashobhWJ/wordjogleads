@@ -39,6 +39,11 @@ class TwentyCRMPersonCreate(BaseSchema):
     linkedinLink: Optional[TwentyCRMLink] = None
     xLink: Optional[TwentyCRMLink] = None
     phones: Optional[TwentyCRMPhones] = None
+    # Custom fields for additional lead information
+    vehicletype: Optional[str] = None  # Vehicle type interest
+    city: Optional[str] = None  # City location
+    employmentlength: Optional[str] = None  # Employment length
+    companyname: Optional[str] = None  # Company employed with
 
 
 class TwentyCRMTaskCreate(BaseSchema):

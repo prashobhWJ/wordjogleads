@@ -753,3 +753,162 @@ class LLMService:
             categories[category] = self._prompt_manager.list_versions(category)
         
         return categories
+    
+    async def extract_lead_from_email(
+        self,
+        email_content: str,
+        email_subject: str = "",
+        sender_email: str = "",
+        model: Optional[str] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Extract lead information from email content using LLM.
+        Converts email content to JSON suitable for loading people.
+        
+        Args:
+            email_content: Email body content (HTML or plain text)
+            email_subject: Email subject line
+            sender_email: Sender's email address
+            model: Model to use (defaults to configured model)
+            **kwargs: Additional parameters to pass to the API
+        
+        Returns:
+            Dictionary containing extracted lead information in Lead model format
+        
+        Raises:
+            ValueError: If response format is invalid or JSON parsing fails
+        """
+        system_prompt = """You are an expert at extracting lead information from emails.
+Your task is to analyze email content and extract structured lead information that can be used to create a person record in a CRM system.
+
+Extract the following information if available:
+- Personal Information: first_name, last_name, full_name, email, phone, date_of_birth
+- Address Information: address_line1, address_line2, city, state_province, postal_code, country, country_code
+- Vehicle Information: vehicle_type (e.g., "Truck", "Car", "SUV", "Luxury Sedan", "Pickup Truck")
+- Financial Information: current_credit (e.g., "Self-employed salary", "Good credit", "Excellent credit")
+- Employment Information: employment_status (e.g., "Self-Employed", "Employed", "Unemployed"), job_title, company_name, monthly_salary_min, monthly_salary_max, employment_length, length_at_company
+- Residency Information: length_at_home_address
+
+If information is not available in the email, use null for that field.
+For dates, use YYYY-MM-DD format.
+For salary amounts, use numbers only (no currency symbols).
+Generate a unique lead_id based on email address and timestamp if not provided.
+
+Return ONLY valid JSON in the following format:
+{
+  "lead_id": "string (unique identifier)",
+  "first_name": "string or null",
+  "last_name": "string or null",
+  "full_name": "string or null",
+  "email": "string or null",
+  "phone": "string or null",
+  "date_of_birth": "YYYY-MM-DD or null",
+  "address_line1": "string or null",
+  "address_line2": "string or null",
+  "city": "string or null",
+  "state_province": "string or null",
+  "postal_code": "string or null",
+  "country": "string or null",
+  "country_code": "string or null",
+  "vehicle_type": "string or null",
+  "current_credit": "string or null",
+  "employment_status": "string or null",
+  "job_title": "string or null",
+  "company_name": "string or null",
+  "monthly_salary_min": number or null,
+  "monthly_salary_max": number or null,
+  "employment_length": "string or null",
+  "length_at_company": "string or null",
+  "length_at_home_address": "string or null"
+}"""
+
+        user_prompt = f"""Extract lead information from the following email:
+
+Subject: {email_subject}
+From: {sender_email}
+
+Email Content:
+{email_content}
+
+Extract all available lead information and return it as JSON. If information is not present, use null for that field."""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        
+        logger.info(
+            f"[cyan]Extracting lead information from email:[/cyan] "
+            f"[dim]Subject: {email_subject[:50]}...[/dim]"
+        )
+        
+        # Use JSON response format to ensure valid JSON output
+        try:
+            response = await self.chat_completion(
+                messages=messages,
+                model=model,
+                response_format={"type": "json_object"},
+                **kwargs
+            )
+        except Exception as e:
+            # If response_format is not supported (e.g., Bedrock), try without it
+            logger.warning(
+                f"[yellow]⚠️  JSON response format not supported, trying without it:[/yellow] {e}"
+            )
+            response = await self.chat_completion(
+                messages=messages,
+                model=model,
+                **kwargs
+            )
+        
+        if "choices" in response and len(response["choices"]) > 0:
+            response_text = response["choices"][0]["message"]["content"]
+            
+            # Parse JSON response
+            try:
+                # Try to extract JSON from response (in case there's extra text)
+                response_text = response_text.strip()
+                if response_text.startswith("```json"):
+                    response_text = response_text[7:]
+                if response_text.startswith("```"):
+                    response_text = response_text[3:]
+                if response_text.endswith("```"):
+                    response_text = response_text[:-3]
+                response_text = response_text.strip()
+                
+                # Parse the JSON
+                result = json.loads(response_text)
+                
+                # Validate that we have at least some basic information
+                if not result.get("lead_id") and not result.get("email"):
+                    # Generate a lead_id from email or timestamp
+                    if sender_email:
+                        import hashlib
+                        from datetime import datetime
+                        email_hash = hashlib.md5(sender_email.encode()).hexdigest()[:8]
+                        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                        result["lead_id"] = f"EMAIL_{email_hash}_{timestamp}"
+                    else:
+                        from datetime import datetime
+                        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                        result["lead_id"] = f"EMAIL_{timestamp}"
+                
+                # Ensure email is set from sender if not extracted
+                if not result.get("email") and sender_email:
+                    result["email"] = sender_email
+                
+                logger.info(
+                    f"[green]✅ Successfully extracted lead information:[/green] "
+                    f"[cyan]{result.get('lead_id', 'N/A')}[/cyan] - "
+                    f"{result.get('full_name') or result.get('first_name') or result.get('email', 'N/A')}"
+                )
+                
+                return result
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"[red]❌ Failed to parse LLM response as JSON:[/red] {e}")
+                logger.error(f"[dim]Response text:[/dim] {response_text}")
+                raise ValueError(f"Invalid JSON response from LLM: {e}")
+        else:
+            raise ValueError("Invalid response format from LLM API")

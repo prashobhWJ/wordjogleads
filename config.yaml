@@ -6,6 +6,10 @@ version: "1.0.0"
 description: "FastAPI REST API for CRM integration"
 api_v1_str: "/api/v1"
 
+# Lead source configuration
+lead_source:
+  type: "email"  # "db" for database or "email" for Microsoft 365 email
+
 # Database configuration
 database:
   server: "localhost"
@@ -21,12 +25,31 @@ database:
     recycle: 3600         # Seconds before recycling a connection (1 hour)
     echo: false           # Set to true to log SQL queries
 
+# Email configuration (for email lead source)
+email:
+  provider: "imap"  # Email provider: "imap" or "pop3"
+  server: "imap.gmail.com"  # IMAP/POP3 server address
+  port: 993  # IMAP port (993 for SSL, 143 for non-SSL) or POP3 port (995 for SSL, 110 for non-SSL)
+  use_ssl: true  # Whether to use SSL/TLS encryption
+  # Authentication method: "oauth2" for Microsoft 365/Outlook, "password" for basic auth
+  auth_method: "password"  # "oauth2" or "password"
+  # OAuth2 settings (required for Microsoft 365/Outlook)
+  mailbox: prashobh@wordjog.com   # Email address of the mailbox to read from (e.g., "leads@example.com")
+  # Basic auth settings (for non-OAuth2 providers like Gmail)
+  username: prashobh@wordjog.com  # Email address or username for basic authentication
+  password: glpljuithgszbrrl
+  folder: "INBOX"  # Mailbox folder to read from (default: "INBOX" for IMAP)
+  read_only: true  # Read-only mode (does not mark emails as read)
+  check_interval: 300  # Interval in seconds to check for new emails (default: 5 minutes)
+  recent_email_minutes: 30  # Time period in minutes to filter recent emails (default: 60 minutes)
+
 # CRM API configuration
 crm:
   base_url: "https://wordjog.twenty.com"  # Twenty CRM base URL
   api_key: null  # Not used for Twenty CRM
   api_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxZjRmYTg2Yi0xOGFhLTQyZWQtYTc1NS1lOTQyNTBiNGIzODgiLCJ0eXBlIjoiQVBJX0tFWSIsIndvcmtzcGFjZUlkIjoiMWY0ZmE4NmItMThhYS00MmVkLWE3NTUtZTk0MjUwYjRiMzg4IiwiaWF0IjoxNzcwMjk5NDIxLCJleHAiOjQ5MjM4MTMwMTksImp0aSI6ImVlYjg4YjE5LTQwZjgtNDFlOC1hYmRiLTZkMjE2ZGRjMDIzYSJ9.P4fJQ0Vhx_CD_-i47cKsDBUcX8MaEi-voIh185tk9PM"
   timeout: 30
+  validate_phone_numbers: false  # Set to false to skip phone numbers if validation fails
 
 # CORS origins (list of allowed origins)
 backend_cors_origins:
